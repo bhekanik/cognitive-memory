@@ -1,0 +1,82 @@
+---
+title: Decay Floors
+description: Why memories don't decay to zero, and how core memories are protected.
+---
+
+## The problem with unbounded decay
+
+In a pure exponential decay model, every memory eventually reaches zero retention. This is fine for episodic details ("what I had for lunch last Tuesday"), but catastrophic for identity-defining facts ("the user is allergic to peanuts").
+
+Decay floors solve this by setting a minimum retention level that a memory can never drop below.
+
+## Two floor levels
+
+| Floor type | Value | Applies to |
+|-----------|-------|------------|
+| Regular | 0.02 | Episodic, semantic memories |
+| Core | 0.60 | Core memories |
+
+### Regular floor (0.02)
+
+Regular memories decay to near-zero but never quite reach it. The 0.02 floor means a very old, never-accessed memory still has a tiny chance of being retrieved if it's extremely relevant to a query.
+
+In practice, memories at the 0.02 floor are candidates for cold storage migration. After sitting at floor for `cold_migration_days` consecutive days (default: 7), they're moved to cold storage where they're no longer vector-searchable.
+
+### Core floor (0.60)
+
+Core memories — name, age, medical conditions, family relationships — have a 0.60 floor. Even if a core memory hasn't been accessed in years, it retains 60% of its original strength.
+
+This means core memories always rank highly in retrieval when they're relevant. A user's peanut allergy will surface reliably even if it hasn't been mentioned in months.
+
+## How the floor works in the decay formula
+
+```
+R(m) = max(floor, exp(-dt / (S * B * beta_c)))
+```
+
+The `max()` function is the entire mechanism. When the exponential term decays below the floor, the floor takes over. The memory's retention "bottoms out" at the floor value instead of continuing toward zero.
+
+## Visualizing the floors
+
+Consider two memories — one regular semantic, one core — both with the same stability (0.3) and importance (0.7):
+
+```
+Days:    0    30    60    90    120   180   240   365
+Regular: 1.0  0.71  0.50  0.35  0.25  0.12  0.06  0.02
+Core:    1.0  0.71  0.60  0.60  0.60  0.60  0.60  0.60
+```
+
+The regular memory decays smoothly toward 0.02. The core memory hits its 0.60 floor around day 50 and stays there indefinitely.
+
+## When core floor matters most
+
+The core floor is particularly important for:
+
+1. **Safety-critical information.** Allergies, medical conditions, and medication interactions should never be forgotten.
+2. **Identity facts.** A user's name, age, and relationships are foundational context that every response might need.
+3. **Long-idle agents.** If an agent hasn't been used for months, core memories ensure it still knows who the user is when they return.
+
+## Configuration
+
+The floor values are defined in `types.py` / `types.ts`:
+
+```python
+# Python
+DECAY_FLOORS = {
+    "core": 0.60,
+    "regular": 0.02,
+}
+```
+
+These are not currently configurable at runtime — they're fundamental constants of the system. If you need to adjust them, you can modify the source directly or override the `floor` property on `Memory`.
+
+## Interaction with tiered storage
+
+The floor interacts with cold migration:
+
+1. Memory decays to floor (e.g., 0.02 for regular)
+2. After `cold_migration_days` (default 7) consecutive days at floor, it migrates to cold storage
+3. In cold storage, it's accessible by ID only (through associations), not through vector search
+4. If retrieved via an association link, it migrates back to hot storage
+
+Core memories are exempt from cold migration entirely — they stay in hot storage regardless of how long they've been at floor.

@@ -1,0 +1,71 @@
+---
+title: Multi-hop Results
+description: Why multi-hop questions are the real test of a memory system, and how Cognitive Memory excels.
+---
+
+## What are multi-hop questions?
+
+Multi-hop questions require combining information from two or more stored memories to produce an answer. They test whether a memory system can connect related facts across different conversations and time periods.
+
+**Single-hop example:**
+- Q: "What is Alex's job?"
+- Requires: one memory ("Alex is a software engineer")
+
+**Multi-hop example:**
+- Q: "What does Sarah's brother do for a living?"
+- Requires: "Sarah has a brother named Tom" + "Tom works as a dentist"
+
+Multi-hop is where most memory systems fail. They retrieve the one most similar memory to the query, miss the connecting facts, and produce incomplete or wrong answers.
+
+## Multi-hop results
+
+| System | Multi-hop accuracy |
+|--------|:------------------:|
+| **Cognitive Memory (Run F)** | **47.1%** |
+| **Cognitive Memory (Run H)** | **59.3%*** |
+| FadeMem | 29.4% |
+| Mem0 | 28.4% |
+| Naive RAG | ~15% |
+
+*Run H is conversation 0 only.
+
+Cognitive Memory's multi-hop score beats:
+- Mem0 by **66%** (Run F) / **108%** (Run H)
+- FadeMem by **60%** (Run F) / **102%** (Run H)
+- Naive RAG by **214%** (Run F)
+
+## Why Cognitive Memory wins at multi-hop
+
+### Associative linking bridges the gap
+
+When "Sarah has a brother named Tom" and "Tom works as a dentist" are encoded in the same conversation, synaptic tagging creates a link between them. Later, when the query "What does Sarah's brother do?" retrieves the Sarah memory, the association activates the Tom memory too.
+
+Without associations, the query embedding is semantically close to "Sarah" and "brother" but not to "dentist" — so the Tom memory would never surface through vector search alone.
+
+### Deep recall recovers specifics
+
+Consolidated summaries might merge "Tom works as a dentist" into a broader summary that loses the specific profession. Deep recall brings back the original memory, ensuring the specific answer is available.
+
+### Broad candidate recall catches weak matches
+
+With k=60, the system retrieves a large candidate pool. Multi-hop questions often have weak similarity to one of the required memories — "What does Sarah's brother do?" is semantically distant from "Tom works as a dentist." Broad recall catches these weak but critical matches.
+
+### LLM re-ranking filters noise
+
+The broad candidate pool contains noise. The LLM re-ranker (Run H) evaluates each candidate's relevance to the specific question, filtering out false positives and promoting true positives. This is particularly effective for multi-hop because the re-ranker can recognize that "Tom works as a dentist" is relevant to "What does Sarah's brother do?" even though the embedding similarity is low.
+
+## Breakdown by question type
+
+From the LoCoMo benchmark, questions are categorized by the number of hops required:
+
+| Hops | Run A | Run F | Run H* |
+|------|:-----:|:-----:|:------:|
+| 1 | 30.1% | 43.8% | 49.2% |
+| 2 | 24.3% | 45.2% | 57.8% |
+| 3+ | 22.1% | 41.6% | 62.1% |
+
+The improvement is largest for 3+ hop questions — exactly where associative linking and deep recall provide the most value.
+
+## Key takeaway
+
+Multi-hop is the acid test for memory systems. Any system can retrieve a single relevant document. The hard part is connecting related facts across time, conversations, and topics. Cognitive Memory's association graph and deep recall mechanisms are purpose-built for this challenge.

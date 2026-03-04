@@ -1,0 +1,93 @@
+---
+title: Deep Recall
+description: Searching superseded memories to recover information lost during consolidation.
+---
+
+## What is deep recall?
+
+Deep recall is an optional search mode that includes superseded memories in the result set. Superseded memories are originals that were compressed into a consolidation summary — they're normally excluded from search.
+
+When deep recall is enabled, these originals are brought back into the candidate pool at a 0.5 penalty, allowing the system to recover specific details that might have been lost during summarization.
+
+## Why it matters
+
+Consolidation compresses groups of fading memories into summaries to save space and reduce noise. But summaries are lossy — specific dates, names, and numbers might be dropped.
+
+Example consolidation:
+- Original 1: "User went hiking at Mount Rainier on March 12, 2024"
+- Original 2: "User went kayaking at Lake Washington on March 15, 2024"
+- Original 3: "User ran a 5K in Fremont on March 20, 2024"
+- Original 4: "User went rock climbing at Stone Gardens on March 25, 2024"
+- Original 5: "User joined a cycling club on March 28, 2024"
+- **Summary:** "User is active outdoors. In March 2024, they went hiking, kayaking, ran a 5K, rock climbed, and joined a cycling club in the Seattle area."
+
+The summary captures the gist but loses specific locations, dates, and details. If someone asks "what gym does the user climb at?", the summary won't mention "Stone Gardens." Deep recall brings back the originals so that detail is recoverable.
+
+## How to use it
+
+### Python
+
+```python
+# Normal search (excludes superseded memories)
+results = await mem.search("rock climbing gym")
+
+# Deep recall (includes superseded originals at 0.5 penalty)
+results = await mem.search("rock climbing gym", deep_recall=True)
+
+# Each result indicates if it came from deep recall
+for r in results:
+    if r.via_deep_recall:
+        print(f"[deep] {r.memory.content}")
+    else:
+        print(f"       {r.memory.content}")
+```
+
+## Scoring
+
+Deep recall memories are scored normally, then penalized:
+
+```
+score_deep = sim(m,q) * R(m)^alpha * deep_recall_penalty
+```
+
+The default `deep_recall_penalty` is 0.5. This means a superseded original needs to be 2x as relevant as an active memory to rank at the same position.
+
+The penalty prevents superseded originals from drowning out their own summaries. The summary should usually win — deep recall originals should only surface when they contain specific details the summary doesn't.
+
+## Where superseded originals live
+
+Superseded originals are moved to cold storage immediately after consolidation. They retain their embeddings, so they can still be scored by cosine similarity when deep recall is enabled.
+
+During deep recall search, the adapter is asked to `include_superseded=True`, which searches across both active and superseded memories in the hot store. (Note: originals in cold storage are accessed through association links from the summary memory.)
+
+## The consolidation-to-deep-recall link
+
+When consolidation creates a summary, it also creates association links from the summary to each original:
+
+```python
+summary.associations[original.id] = Association(
+    target_id=original.id,
+    weight=0.8,
+    created_at=now,
+)
+```
+
+These strong links (0.8) ensure that retrieving the summary can also activate the originals through the association graph, even without enabling deep recall mode.
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    deep_recall_penalty=0.5,  # score multiplier for superseded memories
+)
+```
+
+### When to use deep recall
+
+- **Enable** when users ask for specific details (dates, names, numbers)
+- **Disable** (default) for general retrieval where summaries are sufficient
+- Consider enabling by default if your use case involves precise factual recall
+
+### Performance note
+
+Deep recall increases the candidate pool size, which means more scoring computations. For most systems with < 10,000 memories, the overhead is negligible. For larger systems, use it selectively.

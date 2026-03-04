@@ -1,0 +1,160 @@
+---
+title: Convex Adapter
+description: Serverless backend with real-time sync and zero infrastructure.
+---
+
+## Overview
+
+The Convex adapter integrates Cognitive Memory with Convex — a serverless backend platform with built-in vector search, real-time reactivity, and automatic scaling. It's the best choice for serverless applications where you don't want to manage database infrastructure.
+
+## Installation
+
+```bash
+npm install cognitive-memory convex
+```
+
+Convex is a peer dependency of the TypeScript SDK.
+
+## Setup
+
+### 1. Initialize Convex
+
+```bash
+npx convex init
+npx convex dev
+```
+
+### 2. Configure the adapter
+
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+import { ConvexAdapter } from "cognitive-memory";
+import { ConvexClient } from "convex/browser";
+
+const convex = new ConvexClient(process.env.CONVEX_URL!);
+
+const adapter = new ConvexAdapter({
+    client: convex,
+    // Convex functions that implement the adapter interface
+    functions: {
+        createMemory: api.memories.create,
+        getMemory: api.memories.get,
+        getMemories: api.memories.getBatch,
+        queryMemories: api.memories.query,
+        updateMemory: api.memories.update,
+        deleteMemory: api.memories.remove,
+        deleteMemories: api.memories.removeBatch,
+        vectorSearch: api.memories.search,
+        updateRetentionScores: api.memories.updateRetention,
+        createOrStrengthenLink: api.links.createOrStrengthen,
+        getLinkedMemories: api.links.getLinked,
+        getLinkedMemoriesMultiple: api.links.getLinkedMultiple,
+        deleteLink: api.links.remove,
+        findFadingMemories: api.memories.findFading,
+        findStableMemories: api.memories.findStable,
+        markSuperseded: api.memories.markSuperseded,
+    },
+});
+
+const mem = new CognitiveMemory({
+    adapter,
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+```
+
+### 3. Define Convex schema
+
+In your Convex project, define the memories table:
+
+```typescript
+// convex/schema.ts
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+
+export default defineSchema({
+    memories: defineTable({
+        userId: v.string(),
+        content: v.string(),
+        embedding: v.array(v.float64()),
+        memoryType: v.string(),
+        importance: v.float64(),
+        stability: v.float64(),
+        accessCount: v.int64(),
+        lastAccessed: v.int64(),
+        retention: v.float64(),
+        metadata: v.optional(v.any()),
+    })
+    .index("by_user", ["userId"])
+    .index("by_user_retention", ["userId", "retention"])
+    .vectorIndex("by_embedding", {
+        vectorField: "embedding",
+        dimensions: 1536,
+        filterFields: ["userId", "memoryType"],
+    }),
+
+    memory_links: defineTable({
+        sourceId: v.id("memories"),
+        targetId: v.id("memories"),
+        strength: v.float64(),
+    })
+    .index("by_source", ["sourceId"])
+    .index("by_target", ["targetId"]),
+});
+```
+
+## Features
+
+### Vector search
+
+Convex provides built-in vector search with automatic indexing. No pgvector setup, no HNSW tuning — it just works.
+
+```typescript
+// In your Convex function
+export const search = query({
+    args: { embedding: v.array(v.float64()), userId: v.string(), limit: v.number() },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("memories")
+            .withIndex("by_embedding", (q) =>
+                q.eq("userId", args.userId)
+            )
+            .collect();
+    },
+});
+```
+
+### Real-time sync
+
+Convex's reactivity means memory updates are instantly visible across all connected clients. If one session stores a memory, another session's next query will include it — no polling needed.
+
+### Automatic scaling
+
+Convex handles scaling automatically. No connection pooling, no replica configuration, no capacity planning.
+
+## When to use
+
+- Next.js, React, or other frontend-framework-based applications
+- Serverless deployments (Vercel, Netlify)
+- When you want zero infrastructure management
+- Multi-user applications with real-time requirements
+- Rapid prototyping with persistence
+
+## When NOT to use
+
+- Python-only projects (Convex adapter is TypeScript only)
+- When you need full control over database configuration
+- When you need raw SQL access for debugging
+- Extreme high-throughput scenarios (> 10,000 writes/second)
+
+## Comparison with Postgres
+
+| Feature | Convex | Postgres |
+|---------|--------|----------|
+| Setup complexity | npx convex init | Install, configure, pgvector extension |
+| Scaling | Automatic | Manual (replicas, connection pooling) |
+| Vector search | Built-in | Requires pgvector |
+| Real-time sync | Built-in | Requires additional infrastructure |
+| SQL access | No | Yes |
+| Self-hosted option | No | Yes |
+| Cost model | Usage-based | Fixed infrastructure |

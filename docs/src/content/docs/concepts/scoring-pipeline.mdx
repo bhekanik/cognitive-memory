@@ -1,0 +1,159 @@
+---
+title: Scoring Pipeline
+description: The complete retrieval pipeline from query to ranked results.
+---
+
+## Overview
+
+When you call `search()` or `retrieve()`, the query goes through a multi-stage pipeline that combines vector similarity, temporal decay, associative expansion, and retrieval boosting to produce a ranked list of memories.
+
+## The six stages
+
+### Stage 1: Vector similarity search
+
+The query text is embedded, and the hot store is searched for the top candidates by cosine similarity:
+
+```python
+candidates = await self.adapter.search_similar(
+    query_embedding, top_k=top_k * 3,
+    include_superseded=deep_recall,
+)
+```
+
+The search requests 3x the desired result count to ensure enough candidates survive scoring and filtering.
+
+### Stage 2: Retention-weighted scoring
+
+Each candidate is scored with the R^alpha formula:
+
+```
+combined_score = sim(m,q) * R(m)^alpha
+```
+
+Where alpha = 0.3 (configurable). This softens the decay penalty so faded but relevant memories can still surface.
+
+For superseded memories in deep recall mode, an additional penalty is applied:
+
+```
+combined_score *= deep_recall_penalty  # default: 0.5
+```
+
+Candidates are sorted by combined score, and the top-k are selected as direct results.
+
+### Stage 3: Associative expansion
+
+For each direct result, the engine looks up its association graph:
+
+```python
+for result in direct_results:
+    associated = self.get_associated_memories(result.memory, now)
+    for assoc_mem, assoc_weight in associated:
+        # Score: sim * R^alpha * association_weight
+        ...
+```
+
+Associated memories are scored by their own similarity and retention, multiplied by the association weight. Only associations with weight >= 0.3 (after decay) are activated.
+
+This stage can pull in memories from cold storage — if a cold memory is linked to a direct result, it's scored and included.
+
+### Stage 4: Retrieval boosting
+
+All memories in the result set receive retrieval boosts:
+
+- **Direct results:** `stability += 0.1 * spaced_rep_factor`
+- **Associative results:** `stability += 0.03 * spaced_rep_factor`
+
+Both types also get: `access_count += 1`, `last_accessed_at = now`, session ID added.
+
+Cold memories that were retrieved via associations are migrated back to hot storage.
+
+### Stage 5: Core promotion check
+
+Every memory in the result set is checked against the core promotion criteria:
+
+```python
+for result in all_results:
+    self.check_core_promotion(result.memory)
+```
+
+If a memory has access_count >= 10, stability >= 0.85, and sessions >= 3, it's promoted to core.
+
+### Stage 6: Co-retrieval strengthening
+
+All pairs of direct results have their association links strengthened:
+
+```python
+for i in range(len(direct_mems)):
+    for j in range(i + 1, len(direct_mems)):
+        self.strengthen_association(direct_mems[i], direct_mems[j], now)
+```
+
+This creates new associations (or strengthens existing ones) between memories that co-occur in search results. Over time, this builds a rich associative graph that reflects query patterns.
+
+## Final merge and return
+
+Direct and associative results are merged, deduplicated by memory ID, sorted by combined score, and truncated to top-k:
+
+```python
+all_results = direct_results + associative_results
+all_results.sort(key=lambda x: x.combined_score, reverse=True)
+return all_results[:top_k]
+```
+
+## What the caller receives
+
+Each result in the returned list is a `SearchResult` (Python) or `ScoredMemory` (TypeScript):
+
+### Python SearchResult
+
+```python
+@dataclass
+class SearchResult:
+    memory: Memory           # the full memory object
+    relevance_score: float   # cosine similarity
+    retention_score: float   # R(m) from decay
+    combined_score: float    # relevance * retention^alpha
+    is_associative: bool     # came via association, not direct match
+    via_deep_recall: bool    # came from superseded memory in deep recall
+```
+
+### TypeScript ScoredMemory
+
+```typescript
+interface ScoredMemory extends Memory {
+    relevanceScore: number;  // cosine similarity
+    finalScore: number;      // relevance * retention
+}
+```
+
+## Pipeline summary
+
+```
+Query text
+    |
+    v
+Embed query
+    |
+    v
+Stage 1: Vector search (hot store, top_k * 3)
+    |
+    v
+Stage 2: Score by sim * R^alpha (sort, take top_k)
+    |
+    v
+Stage 3: Expand via associations (cold store too)
+    |
+    v
+Stage 4: Apply direct/associative boosts
+    |
+    v
+Stage 5: Check core promotions
+    |
+    v
+Stage 6: Strengthen co-retrieved associations
+    |
+    v
+Merge, sort, return top_k
+```
+
+Every search actively reshapes the memory system: boosting stabilities, creating/strengthening associations, promoting cores, and reactivating cold memories. The system gets smarter with every query.

@@ -1,0 +1,189 @@
+---
+title: Configuration
+description: All configurable parameters for the Cognitive Memory system.
+---
+
+## Python configuration
+
+All parameters are set via `CognitiveMemoryConfig`:
+
+```python
+from cognitive_memory import CognitiveMemoryConfig
+
+config = CognitiveMemoryConfig(
+    # ... parameters
+)
+mem = CognitiveMemory(config=config)
+```
+
+### Decay parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `faint_threshold` | `float` | `0.15` | Retention below which a memory is "faint" |
+
+The base decay rates and floors are defined as module-level constants:
+
+| Constant | Value | Description |
+|----------|:-----:|-------------|
+| `BASE_DECAY_RATES[EPISODIC]` | 45.0 | Episodic decay rate (days) |
+| `BASE_DECAY_RATES[SEMANTIC]` | 120.0 | Semantic decay rate (days) |
+| `BASE_DECAY_RATES[PROCEDURAL]` | infinity | Procedural never decays |
+| `BASE_DECAY_RATES[CORE]` | 120.0 | Core decay rate (days) |
+| `DECAY_FLOORS["core"]` | 0.60 | Core retention floor |
+| `DECAY_FLOORS["regular"]` | 0.02 | Regular retention floor |
+
+### Retrieval scoring
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `retrieval_score_exponent` | `float` | `0.3` | Alpha in `score = sim * R^alpha`. Lower values ignore decay more. |
+
+### Retrieval boosting
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `direct_boost` | `float` | `0.1` | Stability increase for direct retrieval |
+| `associative_boost` | `float` | `0.03` | Stability increase for associative retrieval |
+| `max_spaced_rep_multiplier` | `float` | `2.0` | Cap on spaced repetition factor |
+| `spaced_rep_interval_days` | `float` | `7.0` | Days for 1x spaced rep factor |
+
+### Core promotion
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `core_access_threshold` | `int` | `10` | Min retrievals for promotion |
+| `core_stability_threshold` | `float` | `0.85` | Min stability for promotion |
+| `core_session_threshold` | `int` | `3` | Min distinct sessions for promotion |
+
+### Associations
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `association_strengthen_amount` | `float` | `0.1` | Weight increase per co-retrieval |
+| `association_retrieval_threshold` | `float` | `0.3` | Min weight to activate association |
+| `association_decay_constant_days` | `float` | `90.0` | Exponential decay time constant |
+
+### Consolidation
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `consolidation_retention_threshold` | `float` | `0.20` | Retention below which memories are consolidation candidates |
+| `consolidation_group_size` | `int` | `5` | Min group size for consolidation |
+| `consolidation_similarity_threshold` | `float` | `0.70` | Min similarity for grouping |
+
+### Tiered storage
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `cold_migration_days` | `int` | `7` | Days at floor before cold migration |
+| `cold_storage_ttl_days` | `int` | `180` | Days in cold before stub conversion |
+
+### Deep recall
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `deep_recall_penalty` | `float` | `0.5` | Score multiplier for superseded memories |
+
+### Ingestion
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `run_maintenance_during_ingestion` | `bool` | `True` | Run tick() every 5 ingestions |
+
+### Models
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `extraction_model` | `str` | `"gpt-4o-mini"` | LLM for memory extraction |
+| `embedding_model` | `str` | `"text-embedding-3-small"` | Embedding model |
+| `embedding_dimensions` | `int` | `1536` | Embedding vector dimensions |
+| `custom_extraction_instructions` | `str \| None` | `None` | Prepend to extraction prompt |
+
+---
+
+## TypeScript configuration
+
+```typescript
+const mem = new CognitiveMemory({
+    adapter: new InMemoryAdapter(),
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+    config: {
+        // ... parameters
+    },
+});
+```
+
+### Available parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `defaultImportance` | `number` | `0.5` | Default importance for new memories |
+| `defaultStability` | `number` | `0.3` | Default stability for new memories |
+| `minRetention` | `number` | `0.2` | Minimum retention for retrieval results |
+| `decayRates.episodic` | `number` | `30` | Episodic decay rate (days) |
+| `decayRates.semantic` | `number` | `90` | Semantic decay rate (days) |
+| `decayRates.procedural` | `number` | `Infinity` | Procedural decay rate (days) |
+
+---
+
+## Full Python example
+
+```python
+config = CognitiveMemoryConfig(
+    # Decay
+    faint_threshold=0.15,
+
+    # Retrieval scoring
+    retrieval_score_exponent=0.3,
+
+    # Retrieval boosting
+    direct_boost=0.1,
+    associative_boost=0.03,
+    max_spaced_rep_multiplier=2.0,
+    spaced_rep_interval_days=7.0,
+
+    # Core promotion
+    core_access_threshold=10,
+    core_stability_threshold=0.85,
+    core_session_threshold=3,
+
+    # Associations
+    association_strengthen_amount=0.1,
+    association_retrieval_threshold=0.3,
+    association_decay_constant_days=90.0,
+
+    # Consolidation
+    consolidation_retention_threshold=0.20,
+    consolidation_group_size=5,
+    consolidation_similarity_threshold=0.70,
+
+    # Tiered storage
+    cold_migration_days=7,
+    cold_storage_ttl_days=180,
+
+    # Deep recall
+    deep_recall_penalty=0.5,
+
+    # Ingestion
+    run_maintenance_during_ingestion=True,
+
+    # Models
+    extraction_model="gpt-4o-mini",
+    embedding_model="text-embedding-3-small",
+    embedding_dimensions=1536,
+    custom_extraction_instructions=None,
+)
+```
+
+---
+
+## Tuning guidelines
+
+See the [Tuning guide](/guides/tuning/) for detailed advice on adjusting these parameters for your workload.
+
+Key interactions to be aware of:
+- `retrieval_score_exponent` and `direct_boost` interact: higher alpha makes boosting more impactful
+- `consolidation_retention_threshold` and `cold_migration_days` together control when memories leave hot storage
+- `core_access_threshold` and `core_stability_threshold` create a compound requirement: lowering one doesn't help if the other is too high

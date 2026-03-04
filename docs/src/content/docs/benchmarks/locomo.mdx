@@ -1,0 +1,87 @@
+---
+title: LoCoMo Results
+description: Full breakdown of Cognitive Memory's performance on the LoCoMo long-conversation benchmark.
+---
+
+## About LoCoMo
+
+LoCoMo (Long Conversation Memory) is a benchmark designed to test long-term memory systems. It consists of 10 multi-session conversations (each 10-30 turns), with 1,540 questions testing different aspects of memory:
+
+- **Single-hop:** Direct recall of a single fact
+- **Multi-hop:** Combining 2+ facts to answer
+- **Temporal:** Questions about when events happened
+- **Open-ended:** Questions with no single correct answer
+
+Each conversation simulates a realistic user-agent interaction over weeks or months, with facts that evolve, contradict, and interleave.
+
+## Our results (Run F — full 10 conversations)
+
+Configuration: Mem0-style prompt, k=60, standard retrieval (no deep recall or re-ranking).
+
+### Per-conversation breakdown
+
+| Conv | Overall | Single-hop | Multi-hop | Temporal |
+|------|:-------:|:----------:|:---------:|:--------:|
+| 0 | 40.5% | 42.1% | 43.2% | 36.8% |
+| 1 | 44.2% | 46.3% | 49.1% | 38.7% |
+| 2 | 41.8% | 43.5% | 46.7% | 35.2% |
+| 3 | 39.7% | 41.2% | 44.3% | 33.9% |
+| 4 | 43.1% | 45.0% | 48.5% | 37.4% |
+| 5 | 45.3% | 47.8% | 51.2% | 39.1% |
+| 6 | 38.9% | 40.5% | 42.8% | 33.1% |
+| 7 | 42.6% | 44.1% | 47.9% | 36.5% |
+| 8 | 44.8% | 46.9% | 50.3% | 38.2% |
+| 9 | 43.0% | 44.7% | 47.0% | 37.6% |
+| **Avg** | **42.4%** | **44.2%** | **47.1%** | **36.7%** |
+
+### Run H (Conv 0 only — deep recall + LLM re-ranking)
+
+| Metric | Run F Conv 0 | Run H Conv 0 | Delta |
+|--------|:-----------:|:-----------:|:-----:|
+| Overall | 40.5% | 47.8% | +7.3pp |
+| Multi-hop | 43.2% | 59.3% | +16.1pp |
+
+The jump from deep recall + re-ranking is dramatic, especially for multi-hop. Full 10-conversation Run H results are in progress.
+
+## Comparison across runs
+
+| Run | Config | Overall | Multi-hop | Notes |
+|-----|--------|:-------:|:---------:|-------|
+| A | Official protocol, k=10 | 28.2% | 26.0% | Baseline |
+| B | FadeMem settings | 27.7% | 24.6% | FadeMem replication |
+| E | Tuned prompt, k=40, deep recall | 38.2% | 33.7% | First improvements |
+| F | Mem0 prompt, k=60 | 42.4% | 47.1% | Broad recall |
+| H | Mem0 prompt, k=60, deep recall + re-rank | 47.8%* | 59.3%* | Best known |
+
+## What we learned
+
+### Retrieval precision is the bottleneck
+
+The biggest gains came from improving retrieval quality, not from changing the answer generation prompt or the decay model. The three-stage pipeline (embedding recall -> R^alpha scoring -> LLM re-ranking) was the key breakthrough.
+
+### Broader recall helps more than better scoring
+
+Going from k=10 (Run A) to k=60 (Run F) added +14.2pp overall. The extra candidates contain relevant memories that rank poorly by embedding similarity alone but are critical for answering the question.
+
+### Deep recall and re-ranking synergize
+
+Deep recall expands the candidate pool with superseded originals. Re-ranking filters the noise this creates. Neither works as well alone:
+
+- Deep recall without re-ranking: adds noise, minimal improvement
+- Re-ranking without deep recall: helps, but misses consolidated details
+- Both together: +7.3pp overall, +16.1pp multi-hop
+
+### Temporal questions are hardest
+
+Temporal accuracy (36.7%) consistently lags behind other categories. Questions like "when did the user go hiking?" require precise date extraction and retrieval, which embedding similarity handles poorly. This is an area for future improvement.
+
+## Methodology
+
+All results use:
+- GPT-4o for answer evaluation (LLM-as-judge)
+- GPT-4o-mini for memory extraction
+- text-embedding-3-small for embeddings (1536 dimensions)
+- Temperature 0 for deterministic answers
+- Ground truth from the LoCoMo dataset
+
+See [Methodology](/benchmarks/methodology/) for full details.

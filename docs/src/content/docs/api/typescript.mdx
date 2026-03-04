@@ -1,0 +1,304 @@
+---
+title: TypeScript API Reference
+description: Complete API reference for the TypeScript cognitive-memory SDK.
+---
+
+## CognitiveMemory
+
+Main class for the cognitive memory system.
+
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+```
+
+### Constructor
+
+```typescript
+new CognitiveMemory(options: {
+    adapter: MemoryAdapter;
+    embeddingProvider: EmbeddingProvider;
+    userId: string;
+    config?: Partial<CognitiveMemoryConfig>;
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|:--------:|-------------|
+| `adapter` | `MemoryAdapter` | Yes | Storage backend |
+| `embeddingProvider` | `EmbeddingProvider` | Yes | Embedding function |
+| `userId` | `string` | Yes | User/agent ID for scoping |
+| `config` | `Partial<CognitiveMemoryConfig>` | No | Override defaults |
+
+### Methods
+
+#### `store(input: MemoryInput): Promise<string>`
+
+Store a new memory. Generates embedding, initializes cognitive metadata.
+
+```typescript
+const id = await mem.store({
+    content: "User is allergic to peanuts",
+    memoryType: "semantic",     // default: "semantic"
+    importance: 0.9,            // default: config.defaultImportance
+    stability: 0.3,             // default: config.defaultStability
+    metadata: { source: "chat" }, // optional
+});
+```
+
+Returns the created memory ID.
+
+#### `retrieve(query: RetrievalQuery): Promise<ScoredMemory[]>`
+
+Retrieve memories relevant to a query. Combines semantic similarity with retention weighting. Includes associative expansion by default.
+
+```typescript
+const results = await mem.retrieve({
+    query: "what is the user allergic to?",
+    limit: 5,                       // default: 5
+    minRetention: 0.2,              // default: config.minRetention
+    memoryTypes: ["semantic"],       // optional filter
+    includeAssociations: true,       // default: true
+});
+```
+
+Returns `ScoredMemory[]` sorted by `finalScore` descending. Each result includes `relevanceScore` and `finalScore`.
+
+Side effects: strengthens retrieved memories (access count, stability, last accessed) and co-retrieval associations.
+
+#### `get(id: string): Promise<Memory | null>`
+
+Get a memory by ID. Strengthens the memory on access.
+
+```typescript
+const memory = await mem.get("abc-123");
+```
+
+#### `queryMemories(filters: MemoryFilters): Promise<Memory[]>`
+
+Query memories with filters. Strengthens returned memories.
+
+```typescript
+const memories = await mem.queryMemories({
+    memoryTypes: ["semantic", "episodic"],
+    minRetention: 0.5,
+    minImportance: 0.3,
+    limit: 20,
+});
+```
+
+#### `update(id: string, content: string): Promise<void>`
+
+Update a memory's content. Regenerates the embedding.
+
+```typescript
+await mem.update("abc-123", "User moved from Portland to Seattle");
+```
+
+#### `consolidate(): Promise<ConsolidationResult>`
+
+Run the consolidation process: identify fading memories, compress similar ones, clean up stale data.
+
+```typescript
+const result = await mem.consolidate();
+console.log(`Decayed: ${result.decayed.length}`);
+console.log(`Compressed: ${result.compressed.length} groups`);
+console.log(`Promotion candidates: ${result.promotionCandidates.length}`);
+console.log(`Deleted: ${result.deleted}`);
+```
+
+#### `refreshRetentionScores(): Promise<void>`
+
+Recompute and persist retention scores for all user memories. Useful before consolidation.
+
+```typescript
+await mem.refreshRetentionScores();
+```
+
+#### `link(sourceId: string, targetId: string, strength?: number): Promise<void>`
+
+Create or strengthen a link between two memories.
+
+```typescript
+await mem.link("abc-123", "def-456", 0.7); // default strength: 0.5
+```
+
+---
+
+## Types
+
+### Memory
+
+```typescript
+interface Memory {
+    id: string;
+    userId: string;
+    content: string;
+    embedding: number[];
+    memoryType: MemoryType;      // "episodic" | "semantic" | "procedural"
+    importance: number;           // 0.0-1.0
+    stability: number;            // 0.0-1.0
+    accessCount: number;
+    lastAccessed: number;         // timestamp (ms)
+    retention: number;            // 0.0-1.0 (cached)
+    createdAt: number;            // timestamp (ms)
+    updatedAt: number;            // timestamp (ms)
+    metadata?: Record<string, unknown>;
+}
+```
+
+### MemoryInput
+
+```typescript
+interface MemoryInput {
+    content: string;
+    memoryType?: MemoryType;      // default: "semantic"
+    importance?: number;          // default: config.defaultImportance
+    stability?: number;           // default: config.defaultStability
+    metadata?: Record<string, unknown>;
+}
+```
+
+### RetrievalQuery
+
+```typescript
+interface RetrievalQuery {
+    query: string;
+    limit?: number;               // default: 5
+    minRetention?: number;        // default: config.minRetention
+    memoryTypes?: MemoryType[];
+    includeAssociations?: boolean; // default: true
+}
+```
+
+### ScoredMemory
+
+```typescript
+interface ScoredMemory extends Memory {
+    relevanceScore: number;       // cosine similarity
+    finalScore: number;           // relevance * retention
+}
+```
+
+### MemoryLink
+
+```typescript
+interface MemoryLink {
+    sourceId: string;
+    targetId: string;
+    strength: number;             // 0.0-1.0
+    createdAt: number;
+    updatedAt: number;
+}
+```
+
+### ConsolidationResult
+
+```typescript
+interface ConsolidationResult {
+    decayed: Array<{ id: string; retention: number }>;
+    compressed: Array<{
+        summaryId: string;
+        originalIds: string[];
+        count: number;
+    }>;
+    promotionCandidates: Array<{
+        id: string;
+        stability: number;
+        accessCount: number;
+    }>;
+    deleted: number;
+}
+```
+
+### CognitiveMemoryConfig
+
+```typescript
+interface CognitiveMemoryConfig {
+    userId: string;
+    defaultImportance?: number;   // default: 0.5
+    defaultStability?: number;    // default: 0.3
+    minRetention?: number;        // default: 0.2
+    decayRates?: {
+        episodic?: number;        // default: 30 (days)
+        semantic?: number;        // default: 90 (days)
+        procedural?: number;      // default: Infinity
+    };
+}
+```
+
+### EmbeddingProvider
+
+```typescript
+interface EmbeddingProvider {
+    embed(text: string): Promise<number[]>;
+}
+```
+
+### MemoryFilters
+
+```typescript
+interface MemoryFilters {
+    userId?: string;
+    memoryTypes?: MemoryType[];
+    minRetention?: number;
+    minImportance?: number;
+    createdAfter?: number;        // timestamp
+    createdBefore?: number;       // timestamp
+    limit?: number;
+    offset?: number;
+}
+```
+
+---
+
+## Utility functions
+
+```typescript
+import {
+    calculateRetention,
+    updateStability,
+    cosineSimilarity,
+    scoreImportance,
+    categorizeMemoryType,
+    extractTopics,
+    normalizeVector,
+    euclideanDistance,
+    BASE_DECAY_RATES,
+} from "cognitive-memory";
+```
+
+### `calculateRetention(params: DecayParameters): number`
+
+Compute current retention for a memory.
+
+### `updateStability(currentStability: number, daysSinceLastAccess: number): number`
+
+Compute new stability after retrieval (spaced repetition).
+
+### `cosineSimilarity(a: number[], b: number[]): number`
+
+Compute cosine similarity between two vectors.
+
+### `scoreImportance(text: string): number`
+
+Heuristic importance scoring based on text content.
+
+### `categorizeMemoryType(text: string): MemoryType`
+
+Heuristic memory type classification.
+
+### `extractTopics(text: string, maxTopics?: number): string[]`
+
+Extract topic keywords from text.
+
+---
+
+## Adapters
+
+```typescript
+import { InMemoryAdapter, MemoryAdapter } from "cognitive-memory";
+import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
+```
+
+See [Adapter specification](/api/adapter-spec/) for the full interface.

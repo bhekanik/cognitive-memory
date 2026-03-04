@@ -1,0 +1,114 @@
+---
+title: Associations
+description: Synaptic tagging, co-retrieval strengthening, and the associative memory graph.
+---
+
+## What are associations?
+
+Associations are bidirectional weighted links between memories. When you retrieve a memory, its associated memories are also activated and returned alongside it — even if they didn't directly match the search query.
+
+This mirrors spreading activation in human cognition: thinking about "coffee" might activate memories about your favorite cafe, the friend you always meet there, and the book you were reading last time.
+
+## How associations form
+
+### 1. Synaptic tagging (at ingestion)
+
+When multiple memories are extracted from the same conversation, the system creates associations between pairs that have semantic overlap. This is analogous to synaptic tagging in neuroscience — memories encoded close together in time are linked.
+
+The algorithm:
+1. For each pair of memories from the same extraction batch
+2. Compute cosine similarity between their embeddings
+3. If similarity >= 0.4 (the ingestion association threshold), create a bidirectional link
+4. Link weight = `min(0.5, 0.2 + (sim - 0.4) * 0.5)`
+
+```python
+# From core.py — simplified
+for i in range(len(stored)):
+    for j in range(i + 1, len(stored)):
+        sim = cosine_similarity(stored[i].embedding, stored[j].embedding)
+        if sim >= 0.4:
+            weight = min(0.5, 0.2 + (sim - 0.4) * 0.5)
+            # Create bidirectional association
+            stored[i].associations[stored[j].id] = Association(
+                target_id=stored[j].id, weight=weight,
+            )
+            stored[j].associations[stored[i].id] = Association(
+                target_id=stored[i].id, weight=weight,
+            )
+```
+
+### 2. Co-retrieval strengthening
+
+When two memories both appear in the same search result set, their association link is strengthened:
+
+```
+w(a,b) += 0.1, capped at 1.0
+```
+
+This is bidirectional: if A and B are co-retrieved, both the A->B and B->A links strengthen by the same amount.
+
+Over time, frequently co-retrieved memories develop very strong links. This creates semantic clusters that activate together.
+
+## Association decay
+
+Links that aren't reinforced decay exponentially:
+
+```
+w(a,b) *= exp(-dt / 90)
+```
+
+Where dt is days since the last co-retrieval event. The time constant of 90 days means:
+
+| Days since co-retrieval | Weight multiplier |
+|------------------------|-------------------|
+| 0 | 1.00 |
+| 30 | 0.72 |
+| 60 | 0.51 |
+| 90 | 0.37 |
+| 180 | 0.14 |
+| 365 | 0.02 |
+
+Links that haven't been reinforced for ~90 days drop to about 37% of their original strength. Below the retrieval threshold (default 0.3), they stop activating during search.
+
+## How associations affect retrieval
+
+During search, the retrieval pipeline:
+
+1. Finds top-k direct matches via vector similarity
+2. For each direct match, looks up its associations with weight >= 0.3
+3. Scores each associated memory: `sim * R^alpha * association_weight`
+4. Applies associative boost to retrieved associated memories
+5. Merges direct and associative results, sorts by score
+
+Associated memories receive the smaller [associative boost](/concepts/retrieval-boosting/) (0.03 vs 0.1 for direct matches).
+
+## The Association dataclass
+
+```python
+@dataclass
+class Association:
+    target_id: str              # ID of the linked memory
+    weight: float = 0.3         # link strength [0, 1]
+    last_co_retrieval: datetime  # when the link was last reinforced
+    created_at: datetime         # when the link was first created
+```
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    association_strengthen_amount=0.1,    # weight increase per co-retrieval
+    association_retrieval_threshold=0.3,  # minimum weight to activate
+    association_decay_constant_days=90.0, # exponential decay time constant
+)
+```
+
+## Cross-tier associations
+
+Associations can point to memories in cold storage. When a cold memory is activated through an association link and meets the retrieval threshold, it's:
+
+1. Scored with its embedding (if available) or given a default relevance of 0.1
+2. Given an associative boost
+3. Migrated back to hot storage
+
+This means "forgotten" memories can resurface through their connections to active memories — a key mechanism for multi-hop reasoning.

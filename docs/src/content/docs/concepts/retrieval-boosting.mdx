@@ -1,0 +1,104 @@
+---
+title: Retrieval Boosting
+description: How memories strengthen through direct and associative retrieval.
+---
+
+## Spaced repetition for AI
+
+In human memory, recalling a fact strengthens it — making it harder to forget in the future. Cognitive Memory implements this through two-tier retrieval boosting.
+
+Every time a memory is retrieved (appears in search results), its stability increases. The size of the boost depends on how long it's been since the memory was last accessed.
+
+## Two boost tiers
+
+### Direct boost
+
+Applied to memories that matched the search query directly (via vector similarity):
+
+```
+stability += 0.1 * spaced_rep_factor
+```
+
+### Associative boost
+
+Applied to memories that were activated through association links (not direct matches):
+
+```
+stability += 0.03 * spaced_rep_factor
+```
+
+The associative boost is intentionally smaller. These memories weren't directly relevant to the query — they were pulled in because they're linked to something relevant. They deserve some reinforcement, but less than a direct match.
+
+## Spaced repetition factor
+
+The `spaced_rep_factor` rewards spaced practice over massed practice:
+
+```
+spaced_rep_factor = min(2.0, days_since_last_access / 7.0)
+```
+
+| Days since last access | Factor |
+|----------------------|--------|
+| 0 (same day) | 0.0 |
+| 1 | 0.14 |
+| 3 | 0.43 |
+| 7 | 1.0 |
+| 14+ | 2.0 (capped) |
+
+This means:
+- Retrieving a memory the same day gives almost no boost (you just saw it)
+- Retrieving after 7 days gives the full base boost
+- Retrieving after 14+ days gives 2x the base boost
+
+This mirrors spaced repetition research: longer gaps between reviews produce stronger long-term retention.
+
+## What boosting affects
+
+When a memory receives a boost, several things change:
+
+1. **stability** increases (by the boost amount * factor)
+2. **access_count** increments by 1
+3. **last_accessed_at** updates to the current time
+4. **session_ids** adds the current session ID
+
+All of these feed back into the system:
+- Higher stability slows future decay (see [decay model](/concepts/decay-model/))
+- Higher access count contributes to core promotion eligibility
+- Updated last_accessed_at resets the decay clock
+- More session IDs move the memory toward the 3-session core promotion threshold
+
+## Worked example
+
+A semantic memory with:
+- stability = 0.3
+- last accessed 10 days ago
+
+Gets retrieved directly:
+```
+spaced_rep = min(2.0, 10/7) = 1.43
+boost = 0.1 * 1.43 = 0.143
+new_stability = min(1.0, 0.3 + 0.143) = 0.443
+```
+
+Gets retrieved associatively:
+```
+boost = 0.03 * 1.43 = 0.043
+new_stability = min(1.0, 0.3 + 0.043) = 0.343
+```
+
+Over many retrievals, stability asymptotically approaches 1.0, making the memory increasingly resistant to decay.
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    direct_boost=0.1,              # base direct boost
+    associative_boost=0.03,        # base associative boost
+    max_spaced_rep_multiplier=2.0, # cap on spaced rep factor
+    spaced_rep_interval_days=7.0,  # days for 1x factor
+)
+```
+
+## Cold reactivation
+
+When a cold memory (in cold storage, not vector-searchable) is retrieved through an association link, it receives an associative boost and is migrated back to hot storage. This allows "forgotten" memories to be resurrected when contextually relevant.

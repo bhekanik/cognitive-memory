@@ -1,0 +1,91 @@
+---
+title: Conflict Detection
+description: How the system detects and resolves contradictions between new and existing memories.
+---
+
+## The problem
+
+Facts change. A user moves cities, changes jobs, starts a new relationship. The memory system needs to detect when new information contradicts or updates existing memories, and handle the transition gracefully.
+
+## How conflict detection works
+
+When a new memory is stored, the system checks it against existing high-importance and core memories:
+
+1. **Filter candidates:** Only check against non-superseded memories with importance > 0.5 or core category (for efficiency).
+2. **Similarity gate:** Compute cosine similarity between the new memory and each candidate. Only check pairs with similarity >= 0.6 (topically related).
+3. **LLM classification:** Ask the LLM to classify the relationship between the two memories.
+
+## Conflict types
+
+The LLM classifies each pair into one of four categories:
+
+| Type | Meaning | Example |
+|------|---------|---------|
+| `CONTRADICTION` | The new memory directly negates the existing one | "User is vegetarian" vs "User ate steak last night" |
+| `UPDATE` | The new memory is a newer version of the same fact | "User lives in Portland" vs "User moved to Seattle" |
+| `OVERLAP` | They cover similar ground but don't conflict | "User likes coffee" vs "User drinks coffee every morning" |
+| `NONE` | They are unrelated | "User likes coffee" vs "User has a dog" |
+
+## Resolution behavior
+
+### CONTRADICTION or UPDATE
+
+When a conflict is detected:
+
+1. **Old memory is demoted:** If the old memory was core, it's downgraded to semantic (losing its 0.60 floor).
+2. **Old memory is marked:** `contradicted_by` is set to the new memory's ID.
+3. **New memory inherits importance:** It takes the maximum of its own importance and the old memory's importance.
+4. **Core inheritance:** If the old memory was core and the conflict is a CONTRADICTION, the new memory is promoted to core.
+
+```python
+if conflict_type in ("CONTRADICTION", "UPDATE"):
+    # Demote old
+    if existing.category == MemoryCategory.CORE:
+        existing.category = MemoryCategory.SEMANTIC
+    existing.contradicted_by = new_memory.id
+
+    # Boost new
+    new_memory.importance = max(new_memory.importance, existing.importance)
+    if conflict_type == "CONTRADICTION" and existing.category == MemoryCategory.CORE:
+        new_memory.category = MemoryCategory.CORE
+```
+
+### OVERLAP or NONE
+
+No action taken. Both memories coexist.
+
+## The conflict detection prompt
+
+```
+Does the new memory contradict or update an existing memory?
+
+Existing memory: "{existing}"
+New memory: "{new}"
+
+Respond with exactly one word: CONTRADICTION, UPDATE, OVERLAP, or NONE.
+- CONTRADICTION: the new memory directly negates the existing one
+- UPDATE: the new memory is a newer version of the same fact
+- OVERLAP: they cover similar ground but don't conflict
+- NONE: they are unrelated
+```
+
+## Performance considerations
+
+Conflict detection is computationally expensive because it involves LLM calls. The system optimizes by:
+
+1. **Only checking high-importance candidates** (importance > 0.5 or core). Low-importance memories aren't worth the LLM call.
+2. **Similarity gate at 0.6.** Only pairs that are semantically related are checked. This filters out the vast majority of comparisons.
+3. **Skipping superseded and stub memories.** Already-resolved conflicts aren't re-checked.
+
+For a typical system with 100 hot memories, a new memory might trigger 2-5 LLM calls (the high-similarity pairs from the filtered candidates). This is manageable within a normal ingestion flow.
+
+## Example flow
+
+1. Memory store contains: "User lives in Portland" (core, importance=0.9)
+2. New memory arrives: "User just moved to Seattle"
+3. Cosine similarity between embeddings: 0.78 (> 0.6 threshold)
+4. LLM call: classifies as "UPDATE"
+5. Resolution:
+   - "User lives in Portland" demoted from core to semantic, marked as contradicted
+   - "User just moved to Seattle" inherits importance 0.9
+6. Future searches will surface the Seattle memory; the Portland memory will gradually decay without the core floor protecting it.

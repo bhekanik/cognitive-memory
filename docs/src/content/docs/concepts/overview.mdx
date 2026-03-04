@@ -1,0 +1,114 @@
+---
+title: Architecture Overview
+description: How biological memory inspired the Cognitive Memory architecture.
+---
+
+## The problem with static memory
+
+Most AI memory systems work like a filing cabinet: store a document, retrieve it later by similarity. This approach has two fundamental problems:
+
+1. **No forgetting.** Every memory has equal weight regardless of age. A user's address from three years ago competes equally with their current address.
+2. **No context.** Memories exist in isolation. There's no way for retrieving one fact to activate related facts.
+
+Human memory solves both problems. It decays over time (forcing prioritization), strengthens with use (surfacing important information), and forms associative networks (enabling multi-hop reasoning).
+
+## Cognitive Memory's architecture
+
+The system implements six biologically-inspired mechanisms:
+
+### 1. Ebbinghaus decay with floors
+
+Every memory has a retention score R(m) that decays exponentially over time. The decay rate depends on the memory's type, stability, and importance. Core memories have a retention floor of 0.60 — they dim but never vanish.
+
+See [Decay model](/concepts/decay-model/) and [Decay floors](/concepts/decay-floors/).
+
+### 2. Memory categorization
+
+Memories are classified into four categories, each with different decay characteristics:
+
+| Category | Base decay (days) | Floor | Description |
+|----------|------------------|-------|-------------|
+| Episodic | 45 | 0.02 | Events with time/place context |
+| Semantic | 120 | 0.02 | Facts, preferences, relationships |
+| Procedural | infinite | -- | Skills, routines (never decay) |
+| Core | 120 | 0.60 | Identity-defining information |
+
+See [Memory types](/concepts/memory-types/).
+
+### 3. Retrieval-weighted scoring
+
+Search results are scored by `sim(m,q) * R(m)^0.3` — cosine similarity modulated by retention. The exponent 0.3 softens the decay penalty so faded memories can still surface when highly relevant.
+
+See [Retrieval scoring](/concepts/retrieval-scoring/).
+
+### 4. Two-tier retrieval boosting
+
+When a memory is retrieved, its stability increases. Direct matches get a larger boost (0.1) than associatively-activated memories (0.03). Both are modulated by a spaced repetition factor: longer gaps between retrievals produce bigger boosts.
+
+See [Retrieval boosting](/concepts/retrieval-boosting/).
+
+### 5. Associative memory graph
+
+Memories form bidirectional links through two mechanisms:
+- **Synaptic tagging** at ingestion: memories encoded in the same session with semantic overlap are linked.
+- **Co-retrieval strengthening**: memories retrieved together have their link weights increased.
+
+Links decay exponentially with time constant 90 days.
+
+See [Associations](/concepts/associations/).
+
+### 6. Tiered storage lifecycle
+
+Memories move through three tiers:
+- **Hot**: full embeddings, vector-searchable
+- **Cold**: ID-accessible only, no vector search
+- **Stub**: archived summary, minimal footprint
+
+See [Tiered storage](/concepts/tiered-storage/).
+
+## How it fits together
+
+The full pipeline from ingestion to retrieval:
+
+```
+Conversation text
+      |
+      v
+  LLM Extraction (narrator prompt)
+      |
+      v
+  Memory objects with category + importance
+      |
+      v
+  Embedding + conflict detection
+      |
+      v
+  Synaptic tagging (ingestion-time associations)
+      |
+      v
+  Storage in hot tier
+      |
+      |--- Search query arrives --->
+      |
+      v
+  Embedding similarity search (hot store)
+      |
+      v
+  R^alpha temporal scoring
+      |
+      v
+  Associative expansion (linked memories)
+      |
+      v
+  Direct + associative boosting
+      |
+      v
+  Core promotion check
+      |
+      v
+  Sorted results returned
+```
+
+Periodic maintenance (`tick()`) handles cold migration, TTL expiry, and consolidation in the background.
+
+See [Scoring pipeline](/concepts/scoring-pipeline/) for the complete retrieval flow, and [Ingestion](/concepts/ingestion/) for the extraction pipeline.

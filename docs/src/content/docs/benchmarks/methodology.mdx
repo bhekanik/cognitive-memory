@@ -1,0 +1,156 @@
+---
+title: Methodology
+description: How we run benchmarks on the LoCoMo dataset.
+---
+
+## Overview
+
+All benchmark results in this documentation follow a consistent methodology. This page documents the exact process so results can be reproduced and fairly compared.
+
+## The LoCoMo dataset
+
+LoCoMo (Long Conversation Memory) provides:
+
+- **10 conversations** of 10-30 turns each
+- **1,540 questions** across multiple categories
+- **Ground truth answers** for each question
+- **Question types:** single-hop, multi-hop, temporal, open-ended
+
+Each conversation simulates a realistic user-agent interaction spanning weeks or months. Facts evolve, contradict, and interleave across sessions.
+
+## Evaluation pipeline
+
+### 1. Ingestion
+
+For each conversation in LoCoMo:
+1. Process conversation turns in chronological order
+2. Extract memories using `extract_and_store()` with the configured extraction model
+3. Each conversation is treated as a separate session
+
+```python
+for conv_id, conversation in locomo_conversations:
+    for turn in conversation.turns:
+        mem.extract_and_store(
+            turn.text,
+            session_id=f"conv-{conv_id}-turn-{turn.index}",
+            timestamp=turn.timestamp,
+        )
+```
+
+### 2. Querying
+
+For each question:
+1. Search the memory system with the question text
+2. Pass retrieved memories as context to the answering LLM
+3. Generate an answer
+
+```python
+results = mem.search(question.text, top_k=k, deep_recall=deep_recall)
+context = "\n".join(r.memory.content for r in results)
+answer = answering_llm(question.text, context)
+```
+
+### 3. Scoring
+
+Each answer is evaluated by an LLM judge (GPT-4o):
+- Compare the generated answer against the ground truth
+- Score as correct (1) or incorrect (0)
+- No partial credit
+
+The judge prompt asks: "Does the generated answer contain the same essential information as the ground truth answer? Answer YES or NO."
+
+## Models used
+
+| Component | Model | Temperature |
+|-----------|-------|:-----------:|
+| Memory extraction | gpt-4o-mini | 0 |
+| Embeddings | text-embedding-3-small | -- |
+| Answer generation | gpt-4o-mini | 0 |
+| Answer evaluation | gpt-4o | 0 |
+| Conflict detection | gpt-4o-mini | 0 |
+| Consolidation compression | gpt-4o-mini | 0 |
+| Re-ranking (Run H only) | gpt-4o-mini | 0 |
+
+Embedding dimensions: 1536
+
+## Run configurations
+
+### Run A: Official protocol
+- k=10, no deep recall, no re-ranking
+- Official LoCoMo evaluation protocol
+- Strict, short answer prompt (max_tokens=32)
+
+### Run B: FadeMem settings
+- FadeMem's published configuration replicated in our framework
+- Used to verify evaluation methodology consistency
+
+### Run E: Tuned prompt + deep recall
+- k=40, deep recall enabled
+- Custom tuned prompt (encourages inference, less conservative)
+
+### Run F: Mem0 prompt + broad recall
+- k=60, no deep recall
+- Mem0-style verbose prompt
+- Broader candidate pool for better coverage
+
+### Run H: Full pipeline
+- k=60, deep recall enabled, LLM re-ranking
+- Three-stage retrieval: embedding recall -> R^alpha scoring -> LLM re-ranking
+- Re-ranker scores each candidate's relevance to the question (1-10 scale)
+- Top candidates by re-rank score passed as context
+
+## Prompt modes
+
+### Official (Run A)
+```
+Answer the following question based on the provided context.
+Be concise and specific.
+
+Context: {context}
+Question: {question}
+Answer:
+```
+Temperature=0, max_tokens=32.
+
+### Mem0 (Runs F, H)
+```
+You are a helpful assistant with access to memories about the user.
+Use the following memories to answer the question. If the memories
+don't contain enough information, say so.
+
+Memories:
+{context}
+
+Question: {question}
+```
+Temperature=0, max_tokens=256.
+
+## Reproducibility
+
+All benchmark code is in `locomo_eval.py` and `adapter.py` in the repository root. To reproduce:
+
+```bash
+# Clone and install
+git clone https://github.com/bhekanik/cognitive-memory
+cd cognitive-memory
+pip install -e ./sdks/python
+
+# Set API key
+export OPENAI_API_KEY=your-key
+
+# Run benchmark
+python locomo_eval.py --run F --conversations 0-9
+```
+
+Results may vary slightly due to LLM non-determinism (even at temperature=0, API responses can differ between runs). Our published numbers are the average of the most recent complete run.
+
+## Cost
+
+A full 10-conversation benchmark run costs approximately:
+- Extraction: ~$2 (gpt-4o-mini)
+- Answer generation: ~$3 (gpt-4o-mini)
+- Evaluation: ~$5 (gpt-4o)
+- Embeddings: ~$0.50
+- Re-ranking (Run H only): ~$4 (gpt-4o-mini)
+
+Total: ~$10-15 per full run.

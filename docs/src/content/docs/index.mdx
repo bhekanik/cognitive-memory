@@ -1,0 +1,117 @@
+---
+title: Cognitive Memory
+description: Human-like memory for AI agents. Biologically-inspired decay, consolidation, and tiered storage.
+template: splash
+hero:
+  tagline: Human-like memory for AI agents. Your agent remembers what matters, forgets what doesn't, and strengthens memories through use — just like a brain.
+  actions:
+    - text: Get Started
+      link: /getting-started/python/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/bhekanik/cognitive-memory
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Install in seconds
+
+```bash
+# Python
+pip install cognitive-memory
+
+# TypeScript
+npm install cognitive-memory
+```
+
+## Why Cognitive Memory?
+
+Most memory systems treat memories as static documents in a vector database. Search, retrieve, done. But human memory is nothing like that. Memories fade over time, strengthen with repeated recall, form associative links, and consolidate into denser representations as they age.
+
+Cognitive Memory brings these dynamics to AI agents. The result: agents that naturally prioritize recent and frequently-accessed information, surface associated context through spreading activation, and gracefully forget irrelevant details instead of drowning in noise.
+
+<CardGrid>
+  <Card title="Ebbinghaus Decay" icon="down-caret">
+    Memories fade on a forgetting curve. Episodic memories (events) decay in ~30 days. Semantic memories (facts) last ~90 days. Procedural memories (skills) never decay. Core memories have a 0.60 retention floor — they dim but never disappear.
+  </Card>
+  <Card title="Retrieval Strengthening" icon="up-caret">
+    Every time a memory is retrieved, its stability increases. Spaced repetition matters: retrieving after a longer gap produces a bigger stability boost. Memories that are accessed frequently become harder to forget.
+  </Card>
+  <Card title="Associative Linking" icon="random">
+    Memories encoded together form synaptic tags. When one is recalled, associated memories are activated and returned alongside it. Links strengthen through co-retrieval and decay without use.
+  </Card>
+  <Card title="Tiered Storage" icon="list-format">
+    Hot memories live in vector search. Cold memories are accessible by ID only. Stubs are archived summaries. Memories migrate between tiers based on their retention scores.
+  </Card>
+</CardGrid>
+
+## Quick taste
+
+### Python
+
+```python
+from cognitive_memory import SyncCognitiveMemory
+
+mem = SyncCognitiveMemory()
+
+# Ingest from conversation
+mem.extract_and_store(
+    "User: I'm allergic to peanuts and I just moved to Portland.",
+    session_id="s1",
+)
+
+# Search with decay-weighted scoring
+results = mem.search("what is the user allergic to?")
+for r in results:
+    print(f"{r.memory.content} (score={r.combined_score:.3f})")
+```
+
+### TypeScript
+
+```typescript
+import { CognitiveMemory, InMemoryAdapter } from "cognitive-memory";
+
+const mem = new CognitiveMemory({
+  adapter: new InMemoryAdapter(),
+  embeddingProvider: myEmbedder,
+  userId: "user-123",
+});
+
+await mem.store({ content: "User is allergic to peanuts", memoryType: "semantic" });
+
+const results = await mem.retrieve({ query: "allergies" });
+```
+
+## Benchmark results
+
+On the LoCoMo long-conversation benchmark (10 conversations, 1540 questions):
+
+| System | Overall | Multi-hop |
+|--------|---------|-----------|
+| **Cognitive Memory** | **42.4%** | **47.1%** |
+| Mem0 | 26.3% | 28.4% |
+| FadeMem | 27.2% | 29.4% |
+| Naive RAG | ~20% | ~15% |
+
+Multi-hop questions require reasoning across multiple stored facts. This is where decay-weighted retrieval and associative linking shine — our multi-hop score beats Mem0 by 66% and FadeMem by 60%.
+
+<CardGrid>
+  <Card title="Python SDK" icon="document">
+    Full async API with sync wrapper. OpenAI embeddings out of the box, or bring your own.
+    [Python quickstart](/getting-started/python/)
+  </Card>
+  <Card title="TypeScript SDK" icon="document">
+    First-class TypeScript with adapters for Convex, Postgres, JSONL, and more.
+    [TypeScript quickstart](/getting-started/typescript/)
+  </Card>
+  <Card title="Pluggable Adapters" icon="setting">
+    InMemory for testing, SQLite for local dev, Postgres with pgvector for production, Redis for ephemeral, Convex for serverless.
+    [Adapter overview](/adapters/overview/)
+  </Card>
+  <Card title="Concepts Deep-Dive" icon="open-book">
+    Understand the science: Ebbinghaus curves, synaptic tagging, memory consolidation, and more.
+    [Concepts overview](/concepts/overview/)
+  </Card>
+</CardGrid>

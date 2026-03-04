@@ -1,0 +1,234 @@
+---
+title: Adapter Specification
+description: The canonical contract that all storage adapters must implement.
+---
+
+## Overview
+
+Every Cognitive Memory adapter, whether built-in or custom, must implement the `MemoryAdapter` abstract class. This page documents the canonical contract for both Python and TypeScript.
+
+## Method categories
+
+The adapter contract is organized into seven categories:
+
+1. **CRUD** — create, read, update, delete individual memories
+2. **Vector search** — similarity search over embeddings
+3. **Tiered storage** — migrate memories between hot/cold/stub
+4. **Association links** — create, query, and delete memory links
+5. **Consolidation helpers** — find fading/stable memories, mark superseded
+6. **Traversal & counts** — list and count memories by tier
+7. **Transactions & reset** — atomic operations and data clearing
+
+---
+
+## CRUD
+
+### `create(memory) -> None`
+
+Store a new memory in the hot tier. The memory object has a pre-generated ID.
+
+### `get(memory_id) -> Memory | None`
+
+Retrieve a memory by ID from any tier (hot, cold, or stub).
+
+### `get_batch(memory_ids) -> list[Memory]`
+
+Retrieve multiple memories by ID. May return fewer items than requested if some IDs don't exist.
+
+### `update(memory) -> None`
+
+Update an existing memory in place. The adapter determines which tier the memory is in.
+
+### `delete(memory_id) -> None`
+
+Hard delete from any tier.
+
+### `delete_batch(memory_ids) -> None`
+
+Hard delete multiple memories.
+
+---
+
+## Vector search
+
+### `search_similar(query_embedding, top_k, include_superseded) -> list[tuple[Memory, float]]`
+
+Search hot-tier memories by cosine similarity.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query_embedding` | `list[float]` | -- | Query vector |
+| `top_k` | `int` | 10 | Max results |
+| `include_superseded` | `bool` | False | Include superseded memories (for deep recall) |
+
+Returns: List of `(Memory, similarity_score)` sorted by similarity descending.
+
+Must exclude:
+- Stub memories (always)
+- Superseded memories (unless `include_superseded=True`)
+- Memories without embeddings
+
+---
+
+## Tiered storage
+
+### `migrate_to_cold(memory_id, cold_since) -> None`
+
+Move a memory from hot to cold tier. Set `is_cold=True` and `cold_since` timestamp. The memory should no longer appear in vector search results.
+
+### `migrate_to_hot(memory_id) -> None`
+
+Move a memory from cold back to hot tier. Reset `is_cold=False`, `cold_since=None`, and `days_at_floor=0`. The memory should appear in vector search results again.
+
+### `convert_to_stub(memory_id, stub_content) -> None`
+
+Replace a memory with a lightweight stub. The stub should have:
+- Same ID as the original
+- `is_stub = True`
+- `is_cold = True`
+- `embedding = None`
+- Content replaced with `stub_content`
+- `stability = 0.0`
+
+---
+
+## Association links
+
+### `create_or_strengthen_link(source_id, target_id, weight) -> None`
+
+Create or strengthen a bidirectional association between two memories.
+
+If the link already exists, add `weight` to the current weight (capped at 1.0).
+If it doesn't exist, create it with the given weight.
+
+### `get_linked_memories(memory_id, min_weight) -> list[tuple[Memory, float]]`
+
+Get all memories linked to a given memory with weight >= `min_weight`.
+
+Returns: List of `(Memory, link_weight)`.
+
+### `delete_link(source_id, target_id) -> None`
+
+Delete the association between two memories (both directions).
+
+---
+
+## Consolidation helpers
+
+### `find_fading(threshold, exclude_core) -> list[Memory]`
+
+Find non-superseded memories in the hot tier that are candidates for consolidation.
+
+Note: The engine computes retention externally. For adapters that don't cache retention, this method may return all non-superseded, non-core hot memories and let the engine filter by computed retention.
+
+### `find_stable(min_stability, min_access_count) -> list[Memory]`
+
+Find memories with high stability and access count (candidates for core promotion).
+
+### `mark_superseded(memory_ids, summary_id) -> None`
+
+Mark memories as superseded by a consolidation summary. Set `is_superseded=True` and `superseded_by=summary_id`.
+
+---
+
+## Traversal & counts
+
+### `all_active() -> list[Memory]`
+
+All memories in hot + cold tiers (excluding stubs).
+
+### `all_hot() -> list[Memory]`
+
+All memories in the hot tier.
+
+### `all_cold() -> list[Memory]`
+
+All memories in the cold tier.
+
+### `hot_count() -> int`
+
+Number of memories in hot tier.
+
+### `cold_count() -> int`
+
+Number of memories in cold tier.
+
+### `stub_count() -> int`
+
+Number of stub records.
+
+### `total_count() -> int`
+
+Total across all tiers.
+
+---
+
+## Batch operations
+
+### `batch_update(memories) -> None`
+
+Update multiple memories at once. More efficient than individual `update()` calls for adapters with batch write support.
+
+### `update_retention_scores(updates: dict[str, float]) -> None`
+
+Bulk update cached retention scores. For adapters that compute retention on-the-fly (like InMemory), this is a no-op.
+
+---
+
+## Transactions
+
+### `transaction(callback) -> T`
+
+Execute a callback within a transaction. For adapters without transaction support, simply call the callback directly.
+
+```python
+# Adapter with transactions (e.g., Postgres)
+async def transaction(self, callback):
+    async with self.pool.acquire() as conn:
+        async with conn.transaction():
+            return await callback(TransactionAdapter(conn))
+
+# Adapter without transactions (e.g., InMemory)
+async def transaction(self, callback):
+    return await callback(self)
+```
+
+---
+
+## Reset
+
+### `clear() -> None`
+
+Delete all data from all tiers. Used for testing and benchmarks.
+
+---
+
+## Implementation notes
+
+### Python
+
+All methods are `async`. Inherit from `cognitive_memory.adapters.base.MemoryAdapter`.
+
+```python
+from cognitive_memory.adapters.base import MemoryAdapter
+
+class MyAdapter(MemoryAdapter):
+    async def create(self, memory: Memory) -> None:
+        ...
+```
+
+### TypeScript
+
+All methods return `Promise`. Extend `MemoryAdapter` from `cognitive-memory`.
+
+```typescript
+import { MemoryAdapter } from "cognitive-memory";
+
+class MyAdapter extends MemoryAdapter {
+    async createMemory(memory: Omit<Memory, "id" | "createdAt" | "updatedAt">): Promise<string> {
+        ...
+    }
+}
+```
+
+Note: The TypeScript adapter interface uses slightly different method names (`createMemory` instead of `create`, `getMemory` instead of `get`, etc.) to avoid conflicts with built-in JavaScript methods.

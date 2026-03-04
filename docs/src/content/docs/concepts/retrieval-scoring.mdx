@@ -1,0 +1,98 @@
+---
+title: Retrieval Scoring
+description: How retrieval results are scored using the R^alpha formula.
+---
+
+## The scoring formula
+
+When you search for memories, each candidate is scored by combining semantic similarity with temporal retention:
+
+```
+score(m, q) = sim(m, q) * R(m)^alpha
+```
+
+Where:
+- **sim(m, q)** = cosine similarity between the memory's embedding and the query embedding
+- **R(m)** = current retention of the memory (from the [decay model](/concepts/decay-model/))
+- **alpha** = retention exponent (default: 0.3)
+
+## Why R^alpha instead of just R?
+
+Using raw retention (alpha = 1.0) would aggressively suppress faded memories. A memory at 20% retention would have its relevance score cut by 80%. This is too harsh — a highly relevant but slightly faded memory should still surface.
+
+The exponent alpha = 0.3 softens the decay penalty:
+
+| Retention R | R^1.0 (raw) | R^0.3 (softened) |
+|------------|-------------|-------------------|
+| 1.00 | 1.00 | 1.00 |
+| 0.80 | 0.80 | 0.93 |
+| 0.60 | 0.60 | 0.86 |
+| 0.40 | 0.40 | 0.76 |
+| 0.20 | 0.20 | 0.62 |
+| 0.10 | 0.10 | 0.50 |
+| 0.02 | 0.02 | 0.31 |
+
+With alpha = 0.3, a memory at 20% retention still retains 62% of its similarity score. This allows old but highly relevant memories to outrank recent but marginally relevant ones.
+
+## Practical effect
+
+Consider two memories being scored against a query:
+
+**Memory A** — Recent, moderate relevance:
+- Cosine similarity: 0.6
+- Retention: 0.95
+- Score = 0.6 * 0.95^0.3 = 0.6 * 0.985 = **0.591**
+
+**Memory B** — Old, high relevance:
+- Cosine similarity: 0.9
+- Retention: 0.25
+- Score = 0.9 * 0.25^0.3 = 0.9 * 0.660 = **0.594**
+
+Memory B wins despite being much older because its semantic relevance is strong enough to overcome the decay penalty. With raw retention (alpha=1.0), Memory B would score only 0.225 — a massive loss of signal.
+
+## Deep recall penalty
+
+When [deep recall](/concepts/deep-recall/) is enabled, superseded memories (originals that were consolidated into summaries) can appear in results. These receive an additional penalty:
+
+```
+score_deep = score * deep_recall_penalty
+```
+
+The default `deep_recall_penalty` is 0.5, meaning superseded memories need to be 2x as relevant to rank alongside active memories.
+
+## Configuration
+
+```python
+from cognitive_memory import CognitiveMemoryConfig
+
+config = CognitiveMemoryConfig(
+    retrieval_score_exponent=0.3,  # alpha
+    deep_recall_penalty=0.5,
+)
+```
+
+### Tuning alpha
+
+- **Lower alpha (0.1-0.2):** Nearly ignores decay. Old memories rank as high as recent ones. Useful when your agent needs total recall regardless of age.
+- **Default alpha (0.3):** Balanced. Slightly favors recent memories but doesn't suppress old relevant ones.
+- **Higher alpha (0.5-1.0):** Strongly favors recent memories. Old memories are effectively buried unless they're extremely relevant. Useful for fast-paced domains where old information is usually stale.
+
+## Implementation
+
+### Python
+
+```python
+def score_memory(self, memory, relevance, now):
+    retention = self.compute_retention(memory, now)
+    alpha = self.config.retrieval_score_exponent
+    return relevance * (retention ** alpha)
+```
+
+### TypeScript
+
+```typescript
+const retention = this.calculateRetentionFor({ ... });
+const finalScore = relevanceScore * retention;
+```
+
+Note: The TypeScript SDK currently uses alpha = 1.0 (raw retention). The Python SDK uses the configurable alpha exponent.

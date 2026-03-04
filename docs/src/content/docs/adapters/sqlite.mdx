@@ -1,0 +1,116 @@
+---
+title: SQLite Adapter
+description: File-based persistence for local development.
+---
+
+## Overview
+
+The SQLite adapter provides file-based persistence with zero server infrastructure. It's the best choice for local development, CLI tools, and single-user applications where you need data to survive process restarts.
+
+## Installation
+
+The SQLite adapter is included in the core package — no extra dependencies needed (Python's `sqlite3` is in the standard library).
+
+```python
+from cognitive_memory import CognitiveMemory
+from cognitive_memory.adapters.sqlite import SQLiteAdapter
+
+mem = CognitiveMemory(adapter=SQLiteAdapter("memories.db"))
+```
+
+## Features
+
+- **Persistent storage** in a single `.db` file
+- **SQL debugging** — inspect memories with any SQLite client
+- **Atomic transactions** via SQLite's built-in transaction support
+- **Brute-force vector search** — embeddings stored as BLOBs, cosine similarity computed in Python
+- **Full tiered storage** support (hot/cold/stub tables)
+
+## Schema
+
+The adapter creates three tables:
+
+```sql
+-- Hot memories (vector-searchable)
+CREATE TABLE hot_memories (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL,
+    importance REAL NOT NULL,
+    stability REAL NOT NULL,
+    access_count INTEGER DEFAULT 0,
+    last_accessed_at TEXT,
+    created_at TEXT,
+    embedding BLOB,
+    associations TEXT,  -- JSON
+    session_ids TEXT,   -- JSON
+    is_superseded INTEGER DEFAULT 0,
+    superseded_by TEXT,
+    contradicted_by TEXT,
+    days_at_floor INTEGER DEFAULT 0
+);
+
+-- Cold memories (ID-only access)
+CREATE TABLE cold_memories (
+    -- same schema as hot_memories
+    cold_since TEXT
+);
+
+-- Stubs (archived summaries)
+CREATE TABLE stubs (
+    id TEXT PRIMARY KEY,
+    content TEXT,
+    category TEXT,
+    importance REAL,
+    created_at TEXT
+);
+```
+
+## Usage patterns
+
+### Development workflow
+
+```python
+mem = CognitiveMemory(adapter=SQLiteAdapter("dev_memories.db"))
+
+# Use normally — data persists across runs
+mem.extract_and_store(conversation, session_id="s1")
+results = mem.search("what does the user like?")
+```
+
+### Debugging with SQL
+
+```bash
+sqlite3 dev_memories.db "SELECT content, category, importance FROM hot_memories ORDER BY importance DESC LIMIT 10"
+```
+
+### Test fixtures
+
+```python
+import pytest
+
+@pytest.fixture
+def memory():
+    adapter = SQLiteAdapter(":memory:")  # in-memory SQLite for tests
+    return CognitiveMemory(adapter=adapter, embedder="hash")
+```
+
+## Limitations
+
+- **No concurrent writes** from multiple processes (SQLite uses file-level locking)
+- **Brute-force vector search** — no index acceleration. Fine for < 50,000 memories, slow beyond that.
+- **Single machine only** — not suitable for distributed deployments
+
+## When to use
+
+- Local development and experimentation
+- CLI tools and scripts that run on a single machine
+- Data that needs to persist but doesn't need distributed access
+- Quick debugging (SQL access to raw memory data)
+
+## When NOT to use
+
+- Production web applications (use Postgres)
+- Multi-process or multi-server scenarios
+- Large memory collections (> 50,000 memories)
+- Serverless environments (use Convex)

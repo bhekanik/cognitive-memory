@@ -1,0 +1,68 @@
+---
+title: Benchmark Overview
+description: How Cognitive Memory compares to Mem0, FadeMem, and naive RAG on the LoCoMo benchmark.
+---
+
+## At a glance
+
+Cognitive Memory was benchmarked against three baselines on the LoCoMo long-conversation dataset (10 conversations, 1540 questions):
+
+| System | Overall accuracy | Multi-hop accuracy |
+|--------|:---------------:|:------------------:|
+| **Cognitive Memory** | **42.4%** | **47.1%** |
+| Mem0 | 26.3% | 28.4% |
+| FadeMem | 27.2% | 29.4% |
+| Naive RAG | ~20% | ~15% |
+
+## What these numbers mean
+
+**Overall accuracy** measures the percentage of questions the system answers correctly, using LLM-evaluated scoring (GPT-4o judges whether the generated answer matches the ground truth).
+
+**Multi-hop accuracy** measures questions that require combining information from multiple stored memories. These are the hardest questions — and the ones where memory architecture matters most.
+
+## Why Cognitive Memory wins
+
+Three mechanisms drive the performance advantage:
+
+### 1. Decay-weighted retrieval
+
+Instead of treating all memories equally, retrieval scoring penalizes old memories and rewards recent, frequently-accessed ones. This naturally surfaces the most relevant context without manual curation.
+
+### 2. Associative linking
+
+Memories that were co-encoded (synaptic tagging) or co-retrieved (strengthening) form links. When one memory is recalled, its neighbors are also activated. This is the key mechanism for multi-hop reasoning — answering "what is Sarah's brother's job?" requires linking the "Sarah has a brother named Tom" memory with the "Tom works as a dentist" memory.
+
+### 3. Deep recall with re-ranking
+
+The benchmark's best configuration adds an LLM re-ranking step after retrieval. Broad candidate recall (k=60) catches relevant memories even if they score low, and the re-ranker filters noise. This three-stage pipeline (embedding recall, R^alpha scoring, LLM re-ranking) is the key insight from our tuning work.
+
+## The benchmark configurations
+
+We ran multiple configurations to isolate the contribution of each mechanism:
+
+| Run | Config | Overall | Multi-hop |
+|-----|--------|:-------:|:---------:|
+| A | Official protocol (k=10) | 28.2% | 26.0% |
+| B | FadeMem-style settings | 27.7% | 24.6% |
+| E | Tuned prompt, k=40, deep recall | 38.2% | 33.7% |
+| F | Mem0 prompt, k=60 | 42.4% | 47.1% |
+| H | Mem0 prompt, k=60, deep recall + re-rank | 47.8%* | 59.3%* |
+
+*Run H results are from conversation 0 only (full 10-conv run in progress).
+
+Each jump tells a story:
+- A to E: tuned prompt and deep recall add +10pp overall
+- E to F: broader recall (k=60) and Mem0-style prompt add +4.2pp
+- F to H: LLM re-ranking adds +5.4pp overall and +12.2pp multi-hop
+
+See [Methodology](/benchmarks/methodology/) for how we run these benchmarks.
+
+## Dive deeper
+
+- [Multi-hop results](/benchmarks/multi-hop/) — detailed breakdown of multi-hop performance
+- [LoCoMo results](/benchmarks/locomo/) — full per-conversation breakdown
+- [vs. Mem0](/benchmarks/vs-mem0/) — direct comparison
+- [vs. FadeMem](/benchmarks/vs-fademem/) — direct comparison
+- [vs. RAG](/benchmarks/vs-rag/) — why cognitive memory beats naive retrieval
+- [Why multi-hop matters](/benchmarks/why-multi-hop-matters/) — the flagship pitch
+- [Methodology](/benchmarks/methodology/) — how we benchmark

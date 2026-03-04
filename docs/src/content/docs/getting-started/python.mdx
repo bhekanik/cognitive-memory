@@ -1,0 +1,191 @@
+---
+title: Python Quickstart
+description: Install the Python SDK and store your first memory in under 5 minutes.
+---
+
+## Installation
+
+```bash
+pip install cognitive-memory
+```
+
+The SDK requires Python 3.10+. By default it uses OpenAI for embeddings and extraction, so you'll need an `OPENAI_API_KEY` environment variable set.
+
+## Basic usage
+
+### Async API
+
+The primary API is async. Use `CognitiveMemory` for async/await workflows:
+
+```python
+import asyncio
+from cognitive_memory import CognitiveMemory
+
+async def main():
+    mem = CognitiveMemory()
+
+    # Add a memory directly
+    await mem.add(
+        "User is allergic to peanuts",
+        category="core",
+        importance=0.95,
+        session_id="session-1",
+    )
+
+    # Search
+    results = await mem.search("what allergies does the user have?")
+    for r in results:
+        print(f"{r.memory.content}")
+        print(f"  relevance={r.relevance_score:.3f}")
+        print(f"  retention={r.retention_score:.3f}")
+        print(f"  combined={r.combined_score:.3f}")
+
+asyncio.run(main())
+```
+
+### Sync API
+
+For scripts, notebooks, and benchmarks, use `SyncCognitiveMemory` — same interface, no `await`:
+
+```python
+from cognitive_memory import SyncCognitiveMemory
+
+mem = SyncCognitiveMemory()
+mem.add("User prefers dark mode", category="semantic", importance=0.4)
+results = mem.search("UI preferences")
+```
+
+## Extract from conversations
+
+Instead of manually adding memories, let the LLM extract them from conversation text:
+
+```python
+from cognitive_memory import SyncCognitiveMemory
+
+mem = SyncCognitiveMemory()
+
+conversation = """
+User: Hey, I just got back from a trip to Japan. It was amazing!
+Assistant: That sounds wonderful! What did you enjoy most?
+User: The food was incredible. I'm actually a vegetarian, so I was
+       worried, but there were so many options. I especially loved
+       the temple in Kyoto — Kinkaku-ji.
+"""
+
+memories = mem.extract_and_store(conversation, session_id="s1")
+for m in memories:
+    print(f"[{m.category.value}] {m.content} (importance={m.importance})")
+```
+
+This will extract memories like:
+- `[episodic] User recently returned from a trip to Japan`
+- `[core] User is a vegetarian`
+- `[episodic] User visited Kinkaku-ji temple in Kyoto`
+- `[semantic] User enjoys Japanese food`
+
+The extractor uses a narrator prompt — it records what happened, not interpretations.
+
+## Choosing an adapter
+
+By default, `CognitiveMemory` uses the `InMemoryAdapter` (data lives in Python dicts, lost on restart). For persistence:
+
+```python
+from cognitive_memory import CognitiveMemory
+# from cognitive_memory.adapters.sqlite import SQLiteAdapter  # coming soon
+# from cognitive_memory.adapters.postgres import PostgresAdapter  # coming soon
+
+# Default: in-memory (great for testing)
+mem = CognitiveMemory()
+
+# With a specific adapter:
+# mem = CognitiveMemory(adapter=SQLiteAdapter("memories.db"))
+# mem = CognitiveMemory(adapter=PostgresAdapter(connection_string))
+```
+
+See the [Adapters overview](/adapters/overview/) for the full list.
+
+## Choosing an embedder
+
+The SDK supports multiple embedding backends:
+
+```python
+# OpenAI embeddings (default, requires OPENAI_API_KEY)
+mem = CognitiveMemory()
+mem = CognitiveMemory(embedder="openai")
+
+# Hash embeddings (offline, deterministic, good for testing)
+mem = CognitiveMemory(embedder="hash")
+
+# Custom embedding provider
+from cognitive_memory import EmbeddingProvider
+
+class MyEmbedder(EmbeddingProvider):
+    def embed(self, text: str) -> list[float]:
+        return my_model.encode(text).tolist()
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]
+
+mem = CognitiveMemory(embedder=MyEmbedder())
+```
+
+## Configuration
+
+All parameters are tunable via `CognitiveMemoryConfig`:
+
+```python
+from cognitive_memory import CognitiveMemory, CognitiveMemoryConfig
+
+config = CognitiveMemoryConfig(
+    # Decay
+    faint_threshold=0.15,
+
+    # Retrieval boosting
+    direct_boost=0.1,
+    associative_boost=0.03,
+
+    # Core promotion
+    core_access_threshold=10,
+    core_stability_threshold=0.85,
+    core_session_threshold=3,
+
+    # Models
+    extraction_model="gpt-4o-mini",
+    embedding_model="text-embedding-3-small",
+    embedding_dimensions=1536,
+)
+
+mem = CognitiveMemory(config=config)
+```
+
+See [Configuration reference](/api/configuration/) for the complete parameter list.
+
+## Maintenance
+
+Run periodic maintenance to migrate cold memories, expire stubs, and consolidate fading clusters:
+
+```python
+from datetime import datetime
+
+# Run all maintenance tasks
+await mem.tick()
+
+# Check system health
+stats = await mem.get_stats()
+print(stats)
+# {
+#   "total_memories": 142,
+#   "hot_memories": 98,
+#   "cold_memories": 38,
+#   "stub_memories": 6,
+#   "core_memories": 12,
+#   "faint_memories": 23,
+#   "avg_retention": 0.71
+# }
+```
+
+## Next steps
+
+- [Concepts overview](/concepts/overview/) — understand how the system works
+- [API reference](/api/python/) — full Python API docs
+- [Tuning guide](/guides/tuning/) — optimize for your workload

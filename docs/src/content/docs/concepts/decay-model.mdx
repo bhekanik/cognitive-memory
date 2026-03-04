@@ -1,0 +1,131 @@
+---
+title: Decay Model
+description: The Ebbinghaus forgetting curve formula that drives memory retention over time.
+---
+
+## The forgetting curve
+
+Cognitive Memory implements a modified Ebbinghaus forgetting curve. Every memory has a retention score R(m) that decays exponentially over time. The formula:
+
+```
+R(m) = max(floor, exp(-dt / (S * B * beta_c)))
+```
+
+Where:
+- **dt** = days since the memory was last accessed
+- **S** = stability (0.0 to 1.0), grows with each retrieval
+- **B** = importance boost = `1.0 + (importance * 2.0)`, capped at 3.0
+- **beta_c** = base decay rate for the memory's category (in days)
+- **floor** = minimum retention (0.60 for core, 0.02 for regular)
+
+## What each factor does
+
+### Stability (S)
+
+Stability represents how resistant a memory is to forgetting. It starts low (0.1 + importance * 0.3 at creation) and increases every time the memory is retrieved.
+
+A memory with stability 0.1 decays roughly 10x faster than one with stability 1.0. This means new memories fade quickly unless reinforced.
+
+### Importance boost (B)
+
+Importance is assigned by the LLM at extraction time (0.0 to 1.0). It translates to a boost multiplier:
+
+| Importance | B (boost) |
+|-----------|-----------|
+| 0.0 | 1.0 |
+| 0.25 | 1.5 |
+| 0.5 | 2.0 |
+| 0.75 | 2.5 |
+| 1.0 | 3.0 |
+
+Higher importance means slower decay. A memory with importance=1.0 decays 3x slower than one with importance=0.0 (all else equal).
+
+### Base decay rate (beta_c)
+
+Each memory category has a base decay rate in days:
+
+| Category | beta_c (days) |
+|----------|--------------|
+| Episodic | 45 |
+| Semantic | 120 |
+| Procedural | infinity (no decay) |
+| Core | 120 |
+
+## Worked example
+
+Consider a semantic memory with:
+- stability = 0.3
+- importance = 0.7
+- created 30 days ago, never re-accessed
+
+```
+B = 1.0 + (0.7 * 2.0) = 2.4
+effective_rate = 0.3 * 2.4 * 120 = 86.4 days
+R = max(0.02, exp(-30 / 86.4))
+R = max(0.02, exp(-0.347))
+R = max(0.02, 0.707)
+R = 0.707
+```
+
+This memory still has 70.7% retention after 30 days.
+
+Now consider the same memory after 180 days:
+
+```
+R = max(0.02, exp(-180 / 86.4))
+R = max(0.02, exp(-2.083))
+R = max(0.02, 0.124)
+R = 0.124
+```
+
+Retention has dropped to 12.4% — but it's still above the 0.02 floor.
+
+If this were a core memory, the floor would be 0.60:
+
+```
+R = max(0.60, 0.124)
+R = 0.60
+```
+
+The core floor catches it at 60%.
+
+## Implementation
+
+### Python
+
+```python
+def compute_retention(self, memory: Memory, now: datetime) -> float:
+    if memory.is_stub:
+        return 0.0
+
+    last = memory.last_accessed_at or memory.created_at
+    dt_days = max(0.0, (now - last).total_seconds() / 86400.0)
+
+    beta_c = memory.base_decay_rate
+    if beta_c == float("inf"):
+        return 1.0  # procedural memories don't decay
+
+    S = max(memory.stability, 0.01)
+    B = min(1.0 + (memory.importance * 2.0), 3.0)
+
+    effective_rate = S * B * beta_c
+    raw = math.exp(-dt_days / effective_rate)
+
+    return max(memory.floor, raw)
+```
+
+### TypeScript
+
+```typescript
+const daysSinceAccess = (Date.now() - lastAccessed) / (1000 * 60 * 60 * 24);
+const importanceBoost = 1.0 + importance * 2.0;
+const frequencyBoost = Math.min(2.0, 1.0 + Math.log1p(accessCount) * 0.1);
+const decayConstant = stability * importanceBoost * frequencyBoost * baseDecay;
+const retention = Math.exp(-daysSinceAccess / decayConstant);
+```
+
+Note: The TypeScript SDK includes an additional frequency boost factor that provides diminishing returns based on access count.
+
+## Key insight
+
+The decay model creates a natural priority ordering. Recent, important, frequently-accessed memories score highest. Old, unimportant, rarely-accessed memories fade toward zero. This happens automatically without any manual curation — the system self-organizes just like human memory.

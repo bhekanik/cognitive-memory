@@ -1,0 +1,105 @@
+---
+title: InMemory Adapter
+description: Zero-config in-memory storage for testing and prototyping.
+---
+
+## Overview
+
+The InMemory adapter stores all memories in Python dicts or JavaScript Maps. It requires zero configuration, has no external dependencies, and provides the fastest possible read/write performance.
+
+Data is lost when the process exits. This is intentional — use it for testing, prototyping, and single-session scripts.
+
+## Python
+
+```python
+from cognitive_memory import CognitiveMemory
+from cognitive_memory.adapters.memory import InMemoryAdapter
+
+# Default — InMemoryAdapter is used automatically
+mem = CognitiveMemory()
+
+# Explicit
+mem = CognitiveMemory(adapter=InMemoryAdapter())
+```
+
+### Internal structure
+
+The Python adapter uses three dicts for tiered storage:
+
+```python
+class InMemoryAdapter(MemoryAdapter):
+    def __init__(self):
+        self.hot: dict[str, Memory] = {}    # vector-searchable
+        self.cold: dict[str, Memory] = {}   # ID-only access
+        self.stubs: dict[str, Memory] = {}  # archived summaries
+```
+
+Vector search is brute-force cosine similarity over all hot memories. This is O(n) per query but fast enough for collections up to ~50,000 memories.
+
+### Tiered storage behavior
+
+- `migrate_to_cold()`: Moves a memory from `hot` to `cold`, sets `is_cold=True`
+- `migrate_to_hot()`: Moves from `cold` back to `hot`, resets cold flags
+- `convert_to_stub()`: Creates a lightweight stub in `stubs`, removes from hot/cold
+
+### Associations
+
+Association links are stored directly on `Memory.associations` dicts. The adapter delegates link management to the engine, which modifies `Memory` objects in-place.
+
+## TypeScript
+
+```typescript
+import { CognitiveMemory, InMemoryAdapter } from "cognitive-memory";
+
+const mem = new CognitiveMemory({
+    adapter: new InMemoryAdapter(),
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+```
+
+### Constructor options
+
+```typescript
+const adapter = new InMemoryAdapter({
+    now: () => Date.now(),       // custom clock (useful for testing)
+    idFactory: () => randomUUID(), // custom ID generator
+});
+```
+
+The `now` option lets you control the clock during tests, so you can simulate time passing without waiting.
+
+### Internal structure
+
+The TypeScript adapter uses:
+- `Map<string, Memory>` for memory storage
+- `Map<string, { strength, createdAt, updatedAt }>` for association links
+
+Link keys are stored as `"idA|idB"` (alphabetically sorted) to ensure bidirectional uniqueness.
+
+## When to use
+
+- Unit tests and integration tests
+- Quick prototyping and experimentation
+- Single-session scripts (data processing, one-off analysis)
+- Benchmarks and evaluation runs
+- Anywhere persistence isn't needed
+
+## When NOT to use
+
+- Production deployments (data loss on restart)
+- Multi-process or multi-server scenarios (no shared state)
+- Large memory collections (> 50,000 memories; search becomes slow)
+- Any scenario requiring durability
+
+## Performance characteristics
+
+| Operation | Complexity | Notes |
+|-----------|-----------|-------|
+| Create | O(1) | Dict insertion |
+| Get by ID | O(1) | Dict lookup |
+| Vector search | O(n) | Scans all hot memories |
+| Migrate hot/cold | O(1) | Dict move |
+| Clear | O(1) | Dict clear |
+
+The adapter is fast enough for most use cases. If you're hitting performance limits with in-memory storage, you should be using Postgres or Redis anyway.

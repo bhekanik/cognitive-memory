@@ -1,0 +1,89 @@
+---
+title: Why Multi-hop Matters
+description: Multi-hop reasoning is the real test of agent memory — and where most systems fail.
+---
+
+## The pitch
+
+If your AI agent only needs to recall isolated facts, any vector database will do. The moment it needs to connect facts across conversations — to reason about relationships, track changes over time, or synthesize information from multiple sessions — you need something fundamentally different.
+
+Multi-hop reasoning is that something. And Cognitive Memory was built for it.
+
+## What multi-hop looks like in practice
+
+### Personal assistant
+
+> User (March 1): "My wife Sarah's birthday is March 15."
+> User (March 3): "Sarah loves Italian food."
+> User (March 10): "Can you suggest a birthday gift?"
+
+The agent needs to connect: wife's birthday is soon + wife loves Italian food = suggest a reservation at an Italian restaurant. Three memories, two hops.
+
+### Health tracking
+
+> User (January): "I'm allergic to penicillin."
+> User (February): "My doctor prescribed amoxicillin."
+
+The agent should flag that amoxicillin is a penicillin-type antibiotic. This requires linking the allergy memory with the prescription memory and knowing the drug relationship.
+
+### Project management
+
+> User (Week 1): "Alex is leading the frontend redesign."
+> User (Week 2): "The frontend team is blocked on the API."
+> User (Week 3): "What's blocking Alex's project?"
+
+The agent needs: Alex leads frontend + frontend blocked on API = Alex is blocked on the API. Two memories, one hop.
+
+## Why most systems fail at this
+
+### Vector similarity is the bottleneck
+
+In the birthday example, the query "Can you suggest a birthday gift?" has:
+- High similarity to "birthday is March 15" (shared word: birthday)
+- Low similarity to "Sarah loves Italian food" (no shared words)
+
+A naive retriever returns the birthday memory but misses the food preference. Without both facts, the agent can't give a good recommendation.
+
+### Independent retrieval can't connect dots
+
+Standard RAG retrieves documents independently. Each document must individually score highly against the query to appear in results. Multi-hop requires documents that are related to each other, not just to the query.
+
+## How Cognitive Memory solves this
+
+### Association graphs create hop paths
+
+When "Sarah's birthday is March 15" and "Sarah loves Italian food" are extracted from nearby conversations, synaptic tagging creates an association between them (they share "Sarah"). When the birthday memory is retrieved, the food preference memory is activated through the association — even though it has low similarity to "birthday gift."
+
+### Co-retrieval strengthening builds paths over time
+
+If the agent has discussed Sarah's birthday and food preferences together before, the co-retrieval strengthening mechanism has already built a strong link between those memories. The more they co-occur in results, the stronger the path becomes.
+
+### Deep recall preserves detail
+
+If early memories about Sarah's preferences have been consolidated into a summary, deep recall can recover the specific "loves Italian food" detail from the superseded original.
+
+## The numbers
+
+On the LoCoMo benchmark, multi-hop accuracy:
+
+| System | Multi-hop |
+|--------|:---------:|
+| Cognitive Memory (Run H) | **59.3%** |
+| Cognitive Memory (Run F) | **47.1%** |
+| FadeMem | 29.4% |
+| Mem0 | 28.4% |
+| Naive RAG | ~15% |
+
+The gap widens as questions require more hops:
+
+| Hops required | Cognitive Memory | Others (avg) |
+|--------------|:----------------:|:------------:|
+| 1 | 43.8% | ~27% |
+| 2 | 45.2% | ~25% |
+| 3+ | 41.6% | ~20% |
+
+## The bottom line
+
+If your agent only answers "What is the user's name?" type questions, you don't need Cognitive Memory. Use any vector database.
+
+If your agent needs to connect "Sarah's birthday is March 15" with "Sarah loves Italian food" to recommend a restaurant — you need associative memory with multi-hop reasoning. That's what Cognitive Memory provides.

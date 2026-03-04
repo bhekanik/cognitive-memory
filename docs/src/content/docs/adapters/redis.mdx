@@ -1,0 +1,146 @@
+---
+title: Redis Adapter
+description: Fast ephemeral storage for high-throughput scenarios.
+---
+
+## Overview
+
+The Redis adapter provides sub-millisecond read/write performance with optional persistence. It's the right choice when latency matters more than durability, or when you're using cognitive memory as a cache layer in front of a more durable store.
+
+## Installation
+
+```bash
+pip install cognitive-memory[redis]
+# or
+pip install cognitive-memory redis
+```
+
+## Usage
+
+```python
+from cognitive_memory import CognitiveMemory
+from cognitive_memory.adapters.redis import RedisAdapter
+
+adapter = RedisAdapter(
+    url="redis://localhost:6379",
+    prefix="cognitive:",  # key prefix for namespacing
+)
+
+mem = CognitiveMemory(adapter=adapter)
+```
+
+## How it works
+
+### Storage model
+
+Memories are stored as Redis hashes with the key pattern `{prefix}memory:{id}`:
+
+```
+cognitive:memory:abc-123 -> {
+    content: "User likes coffee",
+    category: "semantic",
+    importance: "0.8",
+    stability: "0.4",
+    embedding: <binary>,
+    ...
+}
+```
+
+Tiered storage uses key prefixes:
+- `{prefix}hot:{id}` — hot memories
+- `{prefix}cold:{id}` — cold memories
+- `{prefix}stub:{id}` — archived stubs
+
+### Vector search
+
+The adapter can use RediSearch (Redis Stack) for vector similarity search if available:
+
+```python
+adapter = RedisAdapter(
+    url="redis://localhost:6379",
+    use_redisearch=True,  # requires Redis Stack
+)
+```
+
+Without RediSearch, vector search falls back to brute-force: load all hot memory embeddings, compute cosine similarity in Python. This is viable for collections up to ~20,000 memories.
+
+### Association links
+
+Stored as sorted sets: `{prefix}links:{id}` with scores as link weights. This makes weight-threshold queries efficient (`ZRANGEBYSCORE`).
+
+## Persistence options
+
+Redis offers several persistence modes:
+
+| Mode | Durability | Performance impact |
+|------|-----------|-------------------|
+| None | Lost on restart | Fastest |
+| RDB snapshots | Point-in-time backups | Minimal |
+| AOF | Append-only log | Small write overhead |
+| RDB + AOF | Best durability | Moderate |
+
+Configure in `redis.conf`:
+
+```
+# RDB: snapshot every 60 seconds if 1000+ keys changed
+save 60 1000
+
+# AOF: append every write
+appendonly yes
+appendfsync everysec
+```
+
+## Performance characteristics
+
+| Operation | Latency |
+|-----------|---------|
+| Create/update | < 1ms |
+| Get by ID | < 1ms |
+| Vector search (RediSearch) | 1-5ms |
+| Vector search (brute-force) | 5-50ms (depends on collection size) |
+| Migration (hot/cold) | < 1ms |
+
+## TTL integration
+
+Redis has native key TTL support. The adapter can leverage this for automatic stub expiry:
+
+```python
+adapter = RedisAdapter(
+    url="redis://localhost:6379",
+    stub_ttl_days=180,  # stubs auto-expire via Redis TTL
+)
+```
+
+## When to use
+
+- High-throughput scenarios (thousands of reads/writes per second)
+- Session-scoped memory (data can be lost)
+- Cache layer in front of Postgres
+- Real-time applications where latency is critical
+- When you already have Redis infrastructure
+
+## When NOT to use
+
+- When you need guaranteed durability (use Postgres)
+- Large collections without Redis Stack (no vector index)
+- Cost-sensitive deployments (Redis RAM is expensive at scale)
+- Serverless environments (connection management is tricky)
+
+## Example: cache + persist pattern
+
+Use Redis as a fast cache with Postgres as the durable backend:
+
+```python
+# On write: store in both
+redis_adapter = RedisAdapter(url="redis://localhost:6379")
+postgres_adapter = PostgresAdapter(connection_string="postgresql://...")
+
+# Primary: Redis for speed
+mem = CognitiveMemory(adapter=redis_adapter)
+
+# Background: sync to Postgres periodically
+async def sync_to_postgres():
+    hot = await redis_adapter.all_hot()
+    for m in hot:
+        await postgres_adapter.create(m)
+```

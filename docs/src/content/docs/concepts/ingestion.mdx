@@ -1,0 +1,141 @@
+---
+title: Ingestion Pipeline
+description: How conversations are processed into structured memories through LLM extraction.
+---
+
+## Overview
+
+The ingestion pipeline converts raw conversation text into structured, embedded, and linked memories. It has five stages:
+
+1. LLM extraction (narrator prompt)
+2. Embedding
+3. Conflict detection
+4. Ingestion-time similarity boost
+5. Synaptic tagging (association creation)
+
+## Stage 1: LLM extraction
+
+The system sends the conversation text to an LLM with a narrator-style extraction prompt. The prompt instructs the LLM to:
+
+- Extract **every** distinct fact, event, and piece of information
+- **Narrate** what happened rather than interpret (e.g., "Alex went hiking at Mount Rainier" not "Alex enjoys outdoor activities")
+- Classify each memory as `core`, `semantic`, `episodic`, or `procedural`
+- Assign an importance score (0.0 to 1.0)
+- Resolve relative dates using the conversation timestamp
+- Prioritize user messages over assistant messages
+- Never skip passing mentions
+
+The LLM returns a JSON array:
+
+```json
+[
+  {"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9},
+  {"content": "Alex is single", "category": "core", "importance": 0.7},
+  {"content": "Alex finished reading The Great Gatsby in January 2024", "category": "episodic", "importance": 0.5}
+]
+```
+
+### Narrator vs. summarizer
+
+The key design choice is narrator mode. Most memory systems summarize: "User likes outdoor activities." This is lossy and vague. The narrator approach preserves specifics: "User went hiking at Mount Rainier on March 12, 2024."
+
+Specific facts are harder to extract but much more useful for retrieval. "What trail did the user hike?" can only be answered from specific episodic memories, not from generalized summaries.
+
+### Custom extraction instructions
+
+You can prepend custom instructions to the extraction prompt:
+
+```python
+config = CognitiveMemoryConfig(
+    custom_extraction_instructions="Focus on the user's dietary restrictions and food preferences."
+)
+```
+
+## Stage 2: Embedding
+
+After extraction, all memory contents are batch-embedded:
+
+```python
+contents = [m.content for m in memories]
+embeddings = self._embedder.embed_batch(contents)
+for mem, emb in zip(memories, embeddings):
+    mem.embedding = emb
+```
+
+Batch embedding is more efficient than individual calls. The default embedder uses OpenAI's `text-embedding-3-small` with 1536 dimensions.
+
+## Stage 3: Conflict detection
+
+Each new memory is checked against existing high-importance and core memories for contradictions or updates. See [Conflict detection](/concepts/conflict-detection/) for the full mechanism.
+
+This step involves LLM calls, so it only checks pairs with cosine similarity >= 0.6.
+
+## Stage 4: Ingestion-time similarity boost
+
+If a new memory is semantically similar to an existing memory (similarity > 0.75), the existing memory's stability gets a small boost (+0.05):
+
+```python
+similar = await self._adapter.search_similar(mem.embedding, top_k=3)
+for existing_mem, sim in similar:
+    if sim > 0.75 and existing_mem.id != mem.id:
+        existing_mem.stability = min(1.0, existing_mem.stability + 0.05)
+```
+
+This models repeated exposure: when a user mentions the same topic across conversations, the existing memory about that topic becomes more stable — even though a new memory is also being created.
+
+## Stage 5: Synaptic tagging
+
+The final stage creates association links between memories extracted from the same conversation. For each pair of newly-stored memories:
+
+1. Compute cosine similarity between their embeddings
+2. If similarity >= 0.4, create a bidirectional association
+3. Link weight = `min(0.5, 0.2 + (sim - 0.4) * 0.5)`
+
+See [Associations](/concepts/associations/) for details on how these links are used during retrieval.
+
+## Full usage
+
+```python
+# High-level: extract + store everything from a conversation
+memories = await mem.extract_and_store(
+    conversation_text,
+    session_id="session-42",
+    timestamp=datetime(2024, 3, 15),
+    run_tick=True,  # run maintenance every 5 ingestions
+)
+
+# Low-level: add a single memory directly (skips LLM extraction)
+memory = await mem.add(
+    "User is allergic to peanuts",
+    category="core",
+    importance=0.95,
+    session_id="session-42",
+)
+```
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    extraction_model="gpt-4o-mini",         # LLM for extraction
+    embedding_model="text-embedding-3-small", # embedding model
+    embedding_dimensions=1536,               # embedding vector size
+    run_maintenance_during_ingestion=True,    # set False for batch imports
+    custom_extraction_instructions=None,      # prepend to extraction prompt
+)
+```
+
+## Batch ingestion
+
+For batch imports (benchmarks, migration), disable maintenance during ingestion:
+
+```python
+config = CognitiveMemoryConfig(run_maintenance_during_ingestion=False)
+mem = CognitiveMemory(config=config)
+
+for conv in conversations:
+    await mem.extract_and_store(conv, session_id=..., run_tick=False)
+
+# Run maintenance once at the end
+await mem.tick()
+```

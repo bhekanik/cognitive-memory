@@ -1,0 +1,243 @@
+---
+title: Python API Reference
+description: Complete API reference for the Python cognitive-memory SDK.
+---
+
+## CognitiveMemory
+
+The main async API. All public methods are coroutines.
+
+```python
+from cognitive_memory import CognitiveMemory
+```
+
+### Constructor
+
+```python
+CognitiveMemory(
+    config: CognitiveMemoryConfig | None = None,
+    embedder: EmbeddingProvider | Literal["openai", "hash"] | None = None,
+    adapter: MemoryAdapter | None = None,
+)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `config` | `CognitiveMemoryConfig` | `CognitiveMemoryConfig()` | All tunable parameters |
+| `embedder` | `EmbeddingProvider \| "openai" \| "hash"` | `"openai"` | Embedding backend |
+| `adapter` | `MemoryAdapter` | `InMemoryAdapter()` | Storage backend |
+
+### Methods
+
+#### `add(content, category, importance, session_id, timestamp) -> Memory`
+
+Add a single memory directly, bypassing LLM extraction.
+
+```python
+memory = await mem.add(
+    content="User is allergic to peanuts",
+    category=MemoryCategory.CORE,        # default: EPISODIC
+    importance=0.95,                       # default: 0.5
+    session_id="session-1",               # optional
+    timestamp=datetime(2024, 3, 15),      # default: now
+)
+```
+
+Returns the created `Memory` object with generated ID and embedding.
+
+#### `add_memory_object(memory) -> Memory`
+
+Add a pre-built `Memory` object. Embeds the content if `memory.embedding` is None.
+
+```python
+from cognitive_memory.types import Memory
+
+mem_obj = Memory(content="User likes coffee", category=MemoryCategory.SEMANTIC)
+await mem.add_memory_object(mem_obj)
+```
+
+#### `extract_and_store(conversation_text, session_id, timestamp, run_tick) -> list[Memory]`
+
+Extract memories from conversation text using LLM, embed them, check for conflicts, create associations, and store.
+
+```python
+memories = await mem.extract_and_store(
+    conversation_text="User: I just moved to Seattle.\nAssistant: How exciting!",
+    session_id="s1",
+    timestamp=datetime(2024, 3, 15),  # default: now
+    run_tick=True,                     # run maintenance every 5 ingestions
+)
+```
+
+Returns list of created `Memory` objects.
+
+#### `search(query, top_k, timestamp, session_id, deep_recall) -> list[SearchResult]`
+
+Search memories with full retention-weighted scoring, associative expansion, and retrieval boosting.
+
+```python
+results = await mem.search(
+    query="what is the user allergic to?",
+    top_k=10,                              # default: 10
+    timestamp=datetime(2024, 3, 20),       # default: now
+    session_id="s2",                       # optional, for boost tracking
+    deep_recall=False,                     # default: False
+)
+```
+
+Returns list of `SearchResult` objects sorted by `combined_score` descending.
+
+#### `tick(now=None)`
+
+Run periodic maintenance: cold migration, TTL expiry, and consolidation.
+
+```python
+await mem.tick()
+await mem.tick(now=datetime(2024, 6, 1))  # simulate future time
+```
+
+#### `get_stats() -> dict`
+
+Return current memory system statistics.
+
+```python
+stats = await mem.get_stats()
+# {
+#   "total_memories": 142,
+#   "hot_memories": 98,
+#   "cold_memories": 38,
+#   "stub_memories": 6,
+#   "core_memories": 12,
+#   "faint_memories": 23,
+#   "avg_retention": 0.71,
+# }
+```
+
+#### `clear()`
+
+Delete all memories from the adapter.
+
+```python
+await mem.clear()
+```
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `adapter` | `MemoryAdapter` | The storage adapter |
+| `engine` | `CognitiveEngine` | The scoring/decay engine |
+| `embedder` | `EmbeddingProvider` | The embedding provider |
+
+---
+
+## SyncCognitiveMemory
+
+Synchronous wrapper around `CognitiveMemory`. Same interface, no `await`.
+
+```python
+from cognitive_memory import SyncCognitiveMemory
+
+mem = SyncCognitiveMemory(embedder="hash")
+mem.add("User likes coffee", importance=0.5)
+results = mem.search("coffee")
+stats = mem.get_stats()
+mem.clear()
+```
+
+All methods have identical signatures to `CognitiveMemory` but run synchronously. Works in Jupyter notebooks and scripts.
+
+---
+
+## Memory
+
+Core memory dataclass.
+
+```python
+from cognitive_memory import Memory
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `str` | `uuid4()` | Unique identifier |
+| `content` | `str` | `""` | Memory text |
+| `category` | `MemoryCategory` | `EPISODIC` | Memory type |
+| `importance` | `float` | `0.5` | LLM-assessed importance [0,1] |
+| `stability` | `float` | `0.1` | Resistance to decay [0,1] |
+| `access_count` | `int` | `0` | Retrieval count |
+| `last_accessed_at` | `datetime \| None` | `None` | Last retrieval timestamp |
+| `created_at` | `datetime \| None` | `None` | Creation timestamp |
+| `embedding` | `list[float] \| None` | `None` | Vector embedding |
+| `associations` | `dict[str, Association]` | `{}` | Association links |
+| `session_ids` | `set[str]` | `set()` | Sessions that accessed this |
+| `is_cold` | `bool` | `False` | In cold storage |
+| `cold_since` | `datetime \| None` | `None` | When moved to cold |
+| `days_at_floor` | `int` | `0` | Consecutive days at floor |
+| `is_superseded` | `bool` | `False` | Replaced by consolidation |
+| `superseded_by` | `str \| None` | `None` | Summary ID |
+| `contradicted_by` | `str \| None` | `None` | Contradicting memory ID |
+| `is_stub` | `bool` | `False` | Archived stub |
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `floor` | `float` | Retention floor (0.60 for core, 0.02 for regular) |
+| `base_decay_rate` | `float` | Base decay in days for this category |
+| `is_faint` | `bool` | Low stability, non-core |
+| `is_core_memory` | `bool` | Category is CORE |
+
+---
+
+## SearchResult
+
+Returned by `search()`.
+
+```python
+from cognitive_memory import SearchResult
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `memory` | `Memory` | The matched memory |
+| `relevance_score` | `float` | Cosine similarity to query |
+| `retention_score` | `float` | R(m) from decay model |
+| `combined_score` | `float` | relevance * retention^alpha |
+| `is_associative` | `bool` | Came via association link |
+| `via_deep_recall` | `bool` | From superseded memory |
+
+---
+
+## MemoryCategory
+
+Enum for memory types.
+
+```python
+from cognitive_memory import MemoryCategory
+
+MemoryCategory.EPISODIC    # "episodic"
+MemoryCategory.SEMANTIC    # "semantic"
+MemoryCategory.PROCEDURAL  # "procedural"
+MemoryCategory.CORE        # "core"
+```
+
+---
+
+## EmbeddingProvider
+
+Abstract interface for custom embedding backends.
+
+```python
+from cognitive_memory import EmbeddingProvider
+
+class MyEmbedder(EmbeddingProvider):
+    def embed(self, text: str) -> list[float]:
+        return my_model.encode(text).tolist()
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed(t) for t in texts]
+```
+
+Built-in implementations:
+- `OpenAIEmbeddings(model="text-embedding-3-small", dimensions=1536)`
+- `HashEmbeddings(dimensions=384)` — offline, deterministic, testing only

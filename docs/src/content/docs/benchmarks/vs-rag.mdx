@@ -1,0 +1,82 @@
+---
+title: vs. Naive RAG
+description: Why cognitive memory beats standard retrieval-augmented generation.
+---
+
+## Head-to-head
+
+| Metric | Cognitive Memory | Naive RAG | Delta |
+|--------|:----------------:|:---------:|:-----:|
+| Overall | 42.4% | ~20% | **+22pp** (+110%) |
+| Multi-hop | 47.1% | ~15% | **+32pp** (+214%) |
+
+## What naive RAG does
+
+Naive RAG (Retrieval-Augmented Generation) is the simplest approach to memory:
+
+1. Split conversations into chunks
+2. Embed each chunk
+3. Store in a vector database
+4. On query, find the top-k most similar chunks
+5. Pass them to the LLM as context
+
+No decay, no strengthening, no associations, no consolidation. Every chunk competes equally regardless of age, importance, or access history.
+
+## Five reasons Cognitive Memory wins
+
+### 1. Noise reduction through decay
+
+After a long conversation history, naive RAG accumulates thousands of chunks. Many are stale, contradicted, or irrelevant. They all compete for the top-k retrieval slots.
+
+Cognitive Memory's decay model naturally suppresses old, unreinforced information. Only memories that have been recently accessed or are inherently important maintain high retrieval scores. The search space is effectively pre-filtered by temporal relevance.
+
+### 2. Semantic extraction vs. raw chunking
+
+Naive RAG chunks raw conversation text. These chunks contain filler words, conversational scaffolding, and multiple topics mixed together. The embedding of a chunk is a noisy average of everything in it.
+
+Cognitive Memory extracts discrete facts through LLM extraction. Each memory is a single, clean fact: "User is allergic to peanuts." The embedding is precise and specific, leading to better similarity matches.
+
+### 3. Multi-hop through associations
+
+This is the biggest differentiator. Naive RAG retrieves chunks independently — if answering a question requires two pieces of information from different conversations, both chunks must independently score highly against the query.
+
+Cognitive Memory's association graph links related memories. Retrieving one activates its neighbors. The ~32pp multi-hop advantage comes primarily from this mechanism.
+
+### 4. Importance tracking
+
+In naive RAG, a chunk containing "User mentioned they like coffee" has the same weight as "User said they have a severe peanut allergy." Both are just text in a vector database.
+
+Cognitive Memory assigns importance scores at extraction time and tracks stability through access patterns. Critical health information naturally outranks casual preferences in retrieval results.
+
+### 5. Conflict resolution
+
+When a user says "I moved from Portland to Seattle," naive RAG now has two contradictory chunks. Both might be retrieved, confusing the LLM.
+
+Cognitive Memory detects the contradiction, demotes the old memory, and ensures the new memory inherits importance. Only current information surfaces.
+
+## The chunk overlap problem
+
+Naive RAG often uses overlapping chunks to ensure context isn't split at boundaries. This creates redundant information that inflates the result set. If a fact appears in 3 overlapping chunks, all 3 might be retrieved, wasting 2 of your top-k slots.
+
+Cognitive Memory stores each fact once. No redundancy, no wasted retrieval slots.
+
+## When naive RAG is still fine
+
+Naive RAG works adequately for:
+- Single-session applications (no temporal dynamics)
+- Simple factual recall (single-hop questions)
+- Document QA (static content that doesn't change)
+- Prototyping (before investing in a proper memory system)
+
+But for multi-session agents that need to reason across conversations, track evolving facts, and handle contradictions, Cognitive Memory provides a fundamentally better architecture.
+
+## Migration path
+
+If you're currently using naive RAG, you can migrate incrementally:
+
+1. Replace your chunk store with Cognitive Memory
+2. Use `extract_and_store()` instead of raw chunking
+3. Use `search()` instead of vector similarity
+4. The decay, strengthening, and association mechanisms activate automatically
+
+See the [Migration guide](/guides/migration/) for detailed steps.

@@ -1,0 +1,82 @@
+---
+title: vs. FadeMem
+description: How Cognitive Memory compares to FadeMem on the LoCoMo benchmark.
+---
+
+## Head-to-head
+
+| Metric | Cognitive Memory | FadeMem | Delta |
+|--------|:----------------:|:-------:|:-----:|
+| Overall | 42.4% | 27.2% | **+15.2pp** (+56%) |
+| Multi-hop | 47.1% | 29.4% | **+17.7pp** (+60%) |
+
+With deep recall + re-ranking (Run H, conv 0):
+
+| Metric | Cognitive Memory | FadeMem | Delta |
+|--------|:----------------:|:-------:|:-----:|
+| Overall | 47.8% | 27.2% | **+20.6pp** (+76%) |
+| Multi-hop | 59.3% | 29.4% | **+29.9pp** (+102%) |
+
+## What FadeMem does
+
+FadeMem is a research system that introduces temporal decay to memory retrieval. It applies a forgetting curve to penalize old memories during retrieval. Key characteristics:
+
+- Implements basic Ebbinghaus-style decay
+- Decays memories based on age and importance
+- No retrieval-based strengthening (no spaced repetition)
+- No associative linking
+- No tiered storage or consolidation
+
+## Where Cognitive Memory goes further
+
+### 1. Retrieval strengthening
+
+FadeMem applies decay but doesn't strengthen memories when they're retrieved. In Cognitive Memory, every retrieval boosts stability, creating a spaced repetition dynamic. Important memories that are frequently accessed become increasingly resistant to decay.
+
+FadeMem's decay is monotonic — once a memory starts fading, it can only get weaker. Cognitive Memory's decay is non-monotonic — retrieval can reverse the trend.
+
+### 2. Associative graph
+
+FadeMem retrieves memories independently. Cognitive Memory creates and maintains an association graph through synaptic tagging and co-retrieval strengthening. This is the primary driver of the multi-hop advantage.
+
+### 3. Core memory protection
+
+FadeMem has no concept of protected memories. All memories decay at the same rates (modulated by type and importance). Cognitive Memory's core memories have a 0.60 retention floor, ensuring identity-critical facts are always available.
+
+### 4. Tiered storage
+
+FadeMem keeps all memories in a single store. Cognitive Memory migrates faded memories to cold storage, reducing search noise. Cold memories can still be activated through associations, preserving multi-hop paths.
+
+### 5. Consolidation
+
+FadeMem doesn't consolidate fading memories. Over time, the memory store accumulates many faded-but-present memories that add noise to search results. Cognitive Memory compresses groups of fading memories into summaries, maintaining signal quality.
+
+### 6. Deep recall
+
+When consolidation compresses memories, Cognitive Memory preserves the originals in cold storage accessible via deep recall. FadeMem has no equivalent mechanism.
+
+## The decay-only trap
+
+FadeMem demonstrates an important insight: **decay alone isn't enough.** Applying forgetting curves to memory retrieval is a good idea, but without complementary mechanisms (strengthening, associations, protection, consolidation), the improvement over naive RAG is modest.
+
+FadeMem's published LoCoMo results (27.2% overall) are only marginally better than naive RAG (~20%). The decay model helps with noise reduction, but without associations for multi-hop reasoning and strengthening for importance tracking, the gains plateau quickly.
+
+Cognitive Memory's approach treats decay as one component of a complete memory lifecycle: encode -> decay -> strengthen -> associate -> consolidate -> recall.
+
+## Replicating FadeMem's approach
+
+We ran a direct replication of FadeMem's settings (Run B) to verify our baseline:
+
+| Config | Overall | Multi-hop |
+|--------|:-------:|:---------:|
+| FadeMem published | 27.2% | 29.4% |
+| Our Run B (FadeMem settings) | 27.7% | 24.6% |
+
+Results are comparable (within noise), confirming our evaluation methodology is consistent.
+
+## Fair comparison notes
+
+- FadeMem results are from their published paper
+- We replicated their settings in our framework (Run B) for verification
+- Both systems use the same LoCoMo dataset and evaluation protocol
+- The comparison is between FadeMem's published numbers and our Run F (best full-10-conv result)

@@ -1,0 +1,112 @@
+---
+title: Memory Types
+description: Episodic, semantic, procedural, and core memories — each with distinct decay behaviors.
+---
+
+Cognitive Memory classifies every memory into one of four categories. Each category has a different base decay rate and behavior, mirroring how human memory works.
+
+## Episodic memories
+
+**What they are:** Specific events with time and place context. "User went hiking at Mount Rainier on March 12." "User had a job interview yesterday."
+
+**Decay behavior:** Base decay rate of 45 days. These fade relatively quickly because events are time-bound — their relevance diminishes as new events occur.
+
+**When to use:** The LLM extractor assigns `episodic` to memories containing temporal markers, past-tense descriptions, or one-time events.
+
+```python
+await mem.add(
+    "User attended a Python conference in Portland on March 5",
+    category="episodic",
+    importance=0.5,
+)
+```
+
+## Semantic memories
+
+**What they are:** Lasting facts, preferences, relationships, and opinions. "User prefers dark roast coffee." "User has two dogs named Biscuit and Maple."
+
+**Decay behavior:** Base decay rate of 120 days. Facts persist longer than events because they remain relevant across time.
+
+**When to use:** This is the default category. The extractor assigns `semantic` to any fact that isn't clearly time-bound, procedural, or identity-defining.
+
+```python
+await mem.add(
+    "User prefers window seats on flights",
+    category="semantic",
+    importance=0.4,
+)
+```
+
+## Procedural memories
+
+**What they are:** Skills, routines, habits, and how-to knowledge. "User runs every morning at 6am." "User follows the Pomodoro technique for work."
+
+**Decay behavior:** **Never decays.** The base decay rate is infinite. In human cognition, procedural memories (like riding a bike) are extremely resistant to forgetting. They are only updated through correction, not decay.
+
+```python
+await mem.add(
+    "User does 30 minutes of yoga every morning",
+    category="procedural",
+    importance=0.6,
+)
+```
+
+## Core memories
+
+**What they are:** Identity-defining information. Name, age, nationality, medical conditions, family members, profession, where they live. These are the facts that define who the user is.
+
+**Decay behavior:** Base decay rate of 120 days (same as semantic), but with a **retention floor of 0.60**. This means a core memory's retention will never drop below 60%, no matter how long it goes without being accessed. Regular memories have a floor of 0.02 (essentially zero).
+
+**How memories become core:** There are two paths:
+
+1. **At extraction:** The LLM extractor marks identity-defining facts as `core` during ingestion.
+2. **Through promotion:** Any memory that meets all three criteria is automatically promoted:
+   - `access_count >= 10` (retrieved at least 10 times)
+   - `stability >= 0.85` (high stability from repeated use)
+   - Accessed across `>= 3` distinct sessions
+
+See [Core promotion](/concepts/core-promotion/) for details on the promotion mechanism.
+
+```python
+await mem.add(
+    "User's name is Alex, 32 years old",
+    category="core",
+    importance=0.95,
+)
+```
+
+## Decay rates summary
+
+| Category | Base decay (days) | Floor | Python enum |
+|----------|------------------|-------|-------------|
+| Episodic | 45 | 0.02 | `MemoryCategory.EPISODIC` |
+| Semantic | 120 | 0.02 | `MemoryCategory.SEMANTIC` |
+| Procedural | infinity | -- | `MemoryCategory.PROCEDURAL` |
+| Core | 120 | 0.60 | `MemoryCategory.CORE` |
+
+## TypeScript memory types
+
+The TypeScript SDK uses a slightly simplified type system:
+
+```typescript
+type MemoryType = "episodic" | "semantic" | "procedural";
+```
+
+Core memory behavior in TypeScript is handled through stability thresholds and metadata rather than a separate type. The decay rates map directly:
+
+| Type | Base decay (days) |
+|------|------------------|
+| `"episodic"` | 30 |
+| `"semantic"` | 90 |
+| `"procedural"` | infinity |
+
+## How the extractor chooses
+
+The LLM extraction prompt uses these heuristics:
+
+- **Core**: identity info — name, age, gender, relationship status, nationality, medical conditions, family members, profession, location
+- **Episodic**: specific one-time events with dates/times
+- **Procedural**: routines, habits, skills
+- **Semantic**: everything else. This is the default when the extractor is unsure.
+
+The extraction prompt explicitly instructs the LLM to narrate rather than interpret. "Alex went hiking at Mount Rainier" rather than "Alex enjoys outdoor activities." This preserves specificity and avoids lossy generalizations.

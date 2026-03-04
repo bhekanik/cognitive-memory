@@ -1,0 +1,86 @@
+---
+title: Adapters Overview
+description: Choose the right storage backend for your use case.
+---
+
+## The adapter pattern
+
+Cognitive Memory separates the memory engine (decay, scoring, associations) from the storage backend. You pick an adapter that matches your infrastructure, and the engine works identically regardless of what's underneath.
+
+All adapters implement the same abstract interface (`MemoryAdapter` in Python, `MemoryAdapter` in TypeScript), providing:
+
+- CRUD operations on memories
+- Vector similarity search
+- Tiered storage migration (hot/cold/stub)
+- Association link management
+- Consolidation helpers (find fading, mark superseded)
+- Batch operations and transactions
+
+## Available adapters
+
+| Adapter | Language | Persistence | Vector search | Best for |
+|---------|----------|-------------|--------------|----------|
+| [InMemory](/adapters/in-memory/) | Python, TS | No | Brute-force cosine | Testing, prototyping |
+| [SQLite](/adapters/sqlite/) | Python | File | Brute-force cosine | Local development |
+| [Postgres](/adapters/postgres/) | Python, TS | Yes | pgvector | Production |
+| [Redis](/adapters/redis/) | Python | Optional | RediSearch | Fast ephemeral storage |
+| [Convex](/adapters/convex/) | TypeScript | Yes | Convex vector search | Serverless apps |
+| [JSONL](/adapters/jsonl/) | TypeScript | File | Brute-force cosine | Debugging, audit logs |
+
+## Decision matrix
+
+### Choosing by use case
+
+**Testing and prototyping:**
+Use `InMemoryAdapter`. Zero config, instant startup, no dependencies. Data is lost when the process exits, which is fine for tests.
+
+**Local development:**
+Use `SQLiteAdapter` (Python) or `JsonlAdapter` (TypeScript). Both persist to a local file. SQLite gives you SQL queries for debugging; JSONL gives you a human-readable append-only log.
+
+**Production single-tenant:**
+Use `PostgresAdapter` with pgvector. Battle-tested, scalable, supports concurrent access. One Postgres instance can handle millions of memories with sub-100ms vector search via HNSW indexes.
+
+**Production multi-tenant (serverless):**
+Use `ConvexAdapter` (TypeScript). Convex handles scaling, real-time sync, and multi-tenancy out of the box. No infrastructure to manage.
+
+**Ephemeral / cache layer:**
+Use `RedisAdapter`. Sub-millisecond reads, optional persistence with RDB/AOF. Good for high-throughput scenarios where you can tolerate data loss.
+
+### Choosing by priority
+
+| Priority | Recommended adapter |
+|----------|-------------------|
+| Simplest setup | InMemory |
+| Local persistence | SQLite / JSONL |
+| Production reliability | Postgres |
+| Lowest latency | Redis |
+| Zero infra management | Convex |
+| Audit trail | JSONL |
+| Largest scale | Postgres with pgvector |
+
+## Usage pattern
+
+### Python
+
+```python
+from cognitive_memory import CognitiveMemory
+from cognitive_memory.adapters.memory import InMemoryAdapter
+
+mem = CognitiveMemory(adapter=InMemoryAdapter())
+```
+
+### TypeScript
+
+```typescript
+import { CognitiveMemory, InMemoryAdapter } from "cognitive-memory";
+
+const mem = new CognitiveMemory({
+    adapter: new InMemoryAdapter(),
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+```
+
+## Writing a custom adapter
+
+If none of the built-in adapters fit, you can write your own by implementing the `MemoryAdapter` abstract class. See [Custom adapters](/adapters/custom/) for the full guide.

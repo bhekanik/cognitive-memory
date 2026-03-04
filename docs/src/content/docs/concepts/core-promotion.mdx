@@ -1,0 +1,106 @@
+---
+title: Core Promotion
+description: How ordinary memories earn protected status through repeated, cross-session retrieval.
+---
+
+## What is core promotion?
+
+Core promotion is an emergent process where frequently-accessed, high-stability memories are automatically upgraded to core status. Core memories receive a 0.60 retention floor and are exempt from cold storage migration — they represent the most important information the system has learned.
+
+## Promotion criteria
+
+A memory is promoted to core when it meets **all three** thresholds simultaneously:
+
+| Criterion | Default threshold | What it measures |
+|-----------|-----------------|-----------------|
+| `access_count` | >= 10 | How often this memory has been retrieved |
+| `stability` | >= 0.85 | How resistant the memory is to decay |
+| `session_ids` | >= 3 distinct | Whether the memory is relevant across contexts |
+
+All three must be satisfied. A memory accessed 100 times in a single session won't promote (fails session threshold). A highly stable memory accessed only twice won't promote (fails access count).
+
+## Why three criteria?
+
+Each criterion filters out a different type of noise:
+
+- **Access count** ensures the memory has proven its value through repeated retrieval. A memory retrieved once might have been a coincidence.
+- **Stability** ensures the memory has been reinforced over time, not just queried repeatedly in a short burst. Stability grows with spaced retrievals.
+- **Session count** ensures the memory is relevant across different contexts. A memory that's only useful in one conversation isn't identity-defining.
+
+## How promotion happens
+
+Core promotion is checked during the retrieval pipeline. After applying direct and associative boosts, the engine checks every returned memory against the promotion criteria:
+
+```python
+def check_core_promotion(self, memory: Memory) -> bool:
+    if memory.category == MemoryCategory.CORE:
+        return False  # already core
+
+    if (
+        memory.access_count >= self.config.core_access_threshold
+        and memory.stability >= self.config.core_stability_threshold
+        and len(memory.session_ids) >= self.config.core_session_threshold
+    ):
+        memory.category = MemoryCategory.CORE
+        return True
+    return False
+```
+
+When promoted:
+1. The memory's category changes to `CORE`
+2. Its retention floor jumps from 0.02 to 0.60
+3. It becomes exempt from cold storage migration
+4. It becomes exempt from consolidation compression
+
+## The promotion path
+
+Here's a typical lifecycle for a memory that earns core status:
+
+1. **Session 1:** "User is allergic to peanuts" is extracted with category=semantic, importance=0.9
+   - stability: 0.37, access_count: 0, sessions: 1
+
+2. **Sessions 2-4:** The allergy is retrieved in response to food-related questions
+   - Each retrieval boosts stability and increments access_count
+   - stability: ~0.6, access_count: 5, sessions: 3
+
+3. **Sessions 5-8:** Continued retrievals with spaced gaps
+   - stability: ~0.88, access_count: 11, sessions: 5
+
+4. **Promotion triggered:** access_count(11) >= 10, stability(0.88) >= 0.85, sessions(5) >= 3
+   - Category changes from SEMANTIC to CORE
+   - Floor jumps from 0.02 to 0.60
+
+## What about LLM-assigned core?
+
+The LLM extractor can assign `core` category directly during extraction for obvious identity facts (name, age, nationality, medical conditions). These memories start as core from day one — they don't need to earn it through retrieval.
+
+Promotion is the mechanism for facts that weren't obviously identity-defining at extraction time but proved their importance through use. "User prefers window seats" might start as semantic but could promote to core if it's consistently relevant.
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    core_access_threshold=10,        # minimum retrievals
+    core_stability_threshold=0.85,   # minimum stability
+    core_session_threshold=3,        # minimum distinct sessions
+)
+```
+
+### Tuning tips
+
+- **Lower access threshold (5-7):** Promotes memories faster. Good for agents with short session histories where 10 retrievals is rare.
+- **Higher access threshold (15-20):** More selective. Only truly essential memories earn core status.
+- **Lower stability threshold (0.7):** Easier to reach. Memories don't need as many spaced retrievals.
+- **Higher session threshold (5+):** Requires broader cross-context relevance. Prevents session-specific facts from promoting.
+
+## Demotion
+
+Core memories can be demoted when contradicted. If a new memory conflicts with a core memory (detected by the [conflict detection](/concepts/conflict-detection/) system), the core memory is demoted to semantic:
+
+```python
+if conflict_type in ("CONTRADICTION", "UPDATE"):
+    if existing.category == MemoryCategory.CORE:
+        existing.category = MemoryCategory.SEMANTIC
+```
+
+This handles cases like "User moved from Portland to Seattle" contradicting the core memory "User lives in Portland."

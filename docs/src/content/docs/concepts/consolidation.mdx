@@ -1,0 +1,135 @@
+---
+title: Consolidation
+description: How fading memories are compressed into summaries through LLM-powered consolidation.
+---
+
+## What is consolidation?
+
+Consolidation groups semantically similar fading memories and compresses them into a single summary memory. The originals are preserved in cold storage (accessible via [deep recall](/concepts/deep-recall/)), while the summary takes their place in the hot tier.
+
+This mirrors memory consolidation in neuroscience: during sleep, the brain replays and compresses episodic memories into more abstract semantic representations.
+
+## When consolidation runs
+
+Consolidation runs as part of the maintenance `tick()`. By default, it triggers every 5 ingestion cycles:
+
+```python
+await mem.tick()  # runs cold migration, TTL expiry, and consolidation
+```
+
+## The consolidation algorithm
+
+### 1. Find fading memories
+
+Filter hot-store memories where:
+- Retention < `consolidation_retention_threshold` (default: 0.20)
+- Not already superseded
+- Not a core memory (core is exempt)
+
+### 2. Group by category
+
+Only memories of the same category are consolidated together. Episodic memories consolidate with episodic, semantic with semantic.
+
+### 3. Cluster by similarity
+
+Within each category, use greedy clustering with cosine similarity:
+
+```python
+for i, mem_i in enumerate(mems):
+    group = [mem_i]
+    for j, mem_j in enumerate(mems):
+        sim = cosine_similarity(mem_i.embedding, mem_j.embedding)
+        if sim >= consolidation_similarity_threshold:  # default: 0.70
+            group.append(mem_j)
+            if len(group) >= group_size:  # default: 5
+                break
+```
+
+A group must have at least `consolidation_group_size` (default: 5) members to qualify.
+
+### 4. LLM compression
+
+Each group is compressed by the LLM using a consolidation prompt:
+
+```
+Compress these related memories into a single concise summary
+that preserves all key facts.
+
+Memories:
+1. User went hiking at Mount Rainier on March 12
+2. User went kayaking at Lake Washington on March 15
+3. User ran a 5K in Fremont on March 20
+4. User went rock climbing at Stone Gardens on March 25
+5. User joined a cycling club on March 28
+
+Write one clear paragraph. Preserve specific names, dates,
+numbers, and preferences.
+```
+
+If no LLM compress function is available, the system falls back to simple concatenation: `"Summary: " + " | ".join(contents)`.
+
+### 5. Create summary and supersede originals
+
+The summary memory:
+- Inherits the maximum importance from the group
+- Gets average stability from the group
+- Gets the maximum access count from the group
+- Is embedded fresh
+- Has association links (weight 0.8) to each original
+
+Each original:
+- Is marked `is_superseded = True`
+- Has `superseded_by` set to the summary's ID
+- Is moved to cold storage
+
+## Example
+
+Before consolidation (5 fading episodic memories):
+
+```
+[0.18] "User went hiking at Mount Rainier on March 12, 2024"
+[0.15] "User went kayaking at Lake Washington on March 15, 2024"
+[0.12] "User ran a 5K in Fremont on March 20, 2024"
+[0.14] "User went rock climbing at Stone Gardens on March 25, 2024"
+[0.11] "User joined a cycling club on March 28, 2024"
+```
+
+After consolidation:
+
+```
+[HOT] "In March 2024, User was very active outdoors: hiked at Mount
+       Rainier (Mar 12), kayaked at Lake Washington (Mar 15), ran a
+       5K in Fremont (Mar 20), rock climbed at Stone Gardens (Mar 25),
+       and joined a cycling club (Mar 28)."
+
+[COLD, superseded] Original 1-5 (accessible via deep recall)
+```
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    consolidation_retention_threshold=0.20,     # memories below this are candidates
+    consolidation_group_size=5,                 # minimum group size
+    consolidation_similarity_threshold=0.70,    # minimum similarity for grouping
+)
+```
+
+### Tuning tips
+
+- **Lower retention threshold (0.10):** Only consolidate very faded memories. Keeps more originals in hot storage longer.
+- **Higher retention threshold (0.30):** Consolidate earlier. Reduces hot-store size more aggressively.
+- **Lower similarity threshold (0.50):** Creates larger, more diverse groups. Summaries will be broader.
+- **Higher similarity threshold (0.85):** Only groups very similar memories. Summaries will be more focused.
+- **Larger group size (8-10):** Fewer consolidation events, but each summary covers more ground.
+- **Smaller group size (3):** More frequent consolidation. Good for systems with many related memories.
+
+## Reversibility
+
+Consolidation is not destructive. Originals are preserved in cold storage and accessible through:
+
+1. **Association links** from the summary (weight 0.8)
+2. **Deep recall** mode during search
+3. **Direct ID lookup** via `adapter.get()`
+
+This means consolidation can be effectively "undone" by migrating originals back to hot storage if needed.

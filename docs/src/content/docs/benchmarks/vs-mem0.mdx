@@ -1,0 +1,72 @@
+---
+title: vs. Mem0
+description: How Cognitive Memory compares to Mem0 on the LoCoMo benchmark.
+---
+
+## Head-to-head
+
+| Metric | Cognitive Memory | Mem0 | Delta |
+|--------|:----------------:|:----:|:-----:|
+| Overall | 42.4% | 26.3% | **+16.1pp** (+61%) |
+| Multi-hop | 47.1% | 28.4% | **+18.7pp** (+66%) |
+| Single-hop | 44.2% | 28.1% | **+16.1pp** (+57%) |
+
+With deep recall + re-ranking (Run H, conv 0):
+
+| Metric | Cognitive Memory | Mem0 | Delta |
+|--------|:----------------:|:----:|:-----:|
+| Overall | 47.8% | 26.3% | **+21.5pp** (+82%) |
+| Multi-hop | 59.3% | 28.4% | **+30.9pp** (+109%) |
+
+## What Mem0 does
+
+Mem0 is a popular memory layer for AI applications. It extracts facts from conversations and stores them for later retrieval. Key characteristics:
+
+- Stores memories as flat key-value facts
+- Retrieves by vector similarity
+- No temporal decay — all memories are equally weighted regardless of age
+- No associative linking between memories
+- Conflict detection via LLM
+
+## Where Cognitive Memory differs
+
+### 1. Temporal dynamics
+
+Mem0 treats all memories equally. A fact from 6 months ago has the same retrieval priority as one from yesterday. Cognitive Memory's decay model naturally deprioritizes old, unreinforced memories — reducing noise and surfacing recent context.
+
+This matters in LoCoMo because conversations span weeks. Early facts often get contradicted or updated. Without decay, stale information competes with current information, confusing the answering LLM.
+
+### 2. Associative reasoning
+
+Mem0 retrieves memories independently by vector similarity. If answering a question requires combining two memories, both must independently score highly against the query.
+
+Cognitive Memory's association graph connects related memories. Retrieving one activates its neighbors, even if they wouldn't score well on their own. This is the primary driver of the multi-hop advantage.
+
+### 3. Retrieval scoring
+
+Mem0 uses raw cosine similarity for ranking. Cognitive Memory uses `sim * R^alpha`, which balances relevance with temporal freshness. This scoring function naturally handles the case where two memories are equally relevant but one is more recent.
+
+### 4. Deep recall
+
+When memories are consolidated in Cognitive Memory, the originals remain accessible through deep recall. Mem0 has no equivalent — once a memory is updated or compressed, the original detail is lost.
+
+## Why the multi-hop gap is so large
+
+The 18.7pp multi-hop gap (+66%) is the most significant result. Multi-hop questions are the exact scenario where associative linking and deep recall provide value:
+
+- **Association path:** Q: "What sport does Alex's colleague play?" -> retrieves "Alex works with Maria" -> association activates "Maria plays tennis"
+- **Mem0 limitation:** The query embedding is close to "Alex" and "colleague" and "sport" but distant from "Maria" and "tennis." Mem0 retrieves the Alex memory but misses the Maria memory.
+
+## Fair comparison notes
+
+- Both systems use the same extraction LLM (gpt-4o-mini)
+- Both use the same embedding model (text-embedding-3-small)
+- Mem0 results are from their published benchmarks on the same LoCoMo dataset
+- Cognitive Memory Run F uses Mem0's prompt style (verbose, k=60) for a fairer comparison
+- Answer evaluation uses the same LLM-as-judge methodology
+
+## What Mem0 does well
+
+Mem0 is simpler to set up and understand. Its conflict detection is solid. For single-session applications where temporal dynamics don't matter, the simplicity advantage is real. Not every application needs decay and associations — if your agent only processes one conversation at a time and doesn't need to reason across sessions, Mem0 is a reasonable choice.
+
+The Cognitive Memory advantage grows with conversation length, session count, and question complexity.

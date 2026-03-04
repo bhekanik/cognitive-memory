@@ -1,0 +1,114 @@
+---
+title: JSONL Adapter
+description: File-based append-only log for debugging and audit trails.
+---
+
+## Overview
+
+The JSONL adapter writes every operation as a JSON line to a local file. It's designed for debugging, audit trails, and scenarios where human-readable persistence matters more than query performance.
+
+## Installation
+
+The JSONL adapter is included in the TypeScript SDK — no extra dependencies.
+
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
+```
+
+## Usage
+
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
+
+const adapter = new JsonlAdapter({
+    filePath: "./memories.jsonl",
+});
+
+const mem = new CognitiveMemory({
+    adapter,
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+
+await mem.store({ content: "User likes coffee", memoryType: "semantic" });
+```
+
+## File format
+
+Each line is a self-contained JSON object representing the current state of a memory:
+
+```jsonl
+{"id":"abc-123","userId":"user-123","content":"User likes coffee","memoryType":"semantic","importance":0.5,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.1,0.2,...]}
+{"id":"def-456","userId":"user-123","content":"User is from Portland","memoryType":"semantic","importance":0.7,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.3,0.4,...]}
+```
+
+## How it works
+
+### Reads
+
+On startup, the adapter reads the entire JSONL file into memory, building a `Map<string, Memory>`. All queries run against this in-memory map.
+
+### Writes
+
+Every mutation (create, update, delete) is:
+1. Applied to the in-memory map
+2. Appended to the JSONL file as a new line
+
+The file grows append-only. Deletions are recorded as tombstone entries.
+
+### Vector search
+
+Brute-force cosine similarity over the in-memory map, identical to the InMemory adapter.
+
+## Use cases
+
+### Debugging memory behavior
+
+```bash
+# Watch memories being created in real-time
+tail -f memories.jsonl | jq .content
+
+# Count memories by type
+cat memories.jsonl | jq -r .memoryType | sort | uniq -c
+
+# Find high-importance memories
+cat memories.jsonl | jq 'select(.importance > 0.8)'
+```
+
+### Audit trails
+
+The append-only nature means you have a complete history of every memory operation. You can replay the log to reconstruct the state at any point in time.
+
+### Test fixtures
+
+```typescript
+// Write memories during development
+const adapter = new JsonlAdapter({ filePath: "./test-fixtures/conversation-1.jsonl" });
+
+// Later, load them in tests
+const testAdapter = new JsonlAdapter({ filePath: "./test-fixtures/conversation-1.jsonl" });
+```
+
+## Limitations
+
+- **No concurrent writes** — single-process only. Multiple processes writing to the same file will corrupt it.
+- **File grows indefinitely** — no compaction. For long-running systems, the file can get large.
+- **Brute-force search** — no vector index. Performance degrades beyond ~20,000 memories.
+- **Startup cost** — the entire file is read into memory on initialization. Large files mean slow startup.
+
+## When to use
+
+- Debugging and development
+- Audit logging alongside a primary adapter
+- Test fixture generation
+- Small-scale applications where human-readable persistence is valued
+- Prototyping before committing to a database
+
+## When NOT to use
+
+- Production workloads
+- Large memory collections (> 20,000)
+- Multi-process environments
+- When disk space is constrained

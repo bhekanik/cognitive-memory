@@ -1,0 +1,182 @@
+---
+title: Postgres Adapter
+description: Production-grade storage with pgvector for fast similarity search.
+---
+
+## Overview
+
+The Postgres adapter is the recommended choice for production deployments. It uses pgvector for hardware-accelerated vector similarity search, supports concurrent access, and scales to millions of memories.
+
+## Installation
+
+### Python
+
+```bash
+pip install cognitive-memory[postgres]
+# or
+pip install cognitive-memory psycopg2-binary
+```
+
+### TypeScript
+
+```bash
+npm install cognitive-memory pg
+```
+
+The `pg` package is a peer dependency — install it alongside the SDK.
+
+## Setup
+
+### Prerequisites
+
+1. PostgreSQL 14+ with the pgvector extension:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+2. A connection string:
+
+```
+postgresql://user:password@localhost:5432/memories
+```
+
+### Python usage
+
+```python
+from cognitive_memory import CognitiveMemory
+from cognitive_memory.adapters.postgres import PostgresAdapter
+
+adapter = PostgresAdapter(
+    connection_string="postgresql://user:pass@localhost:5432/memories",
+    embedding_dimensions=1536,
+)
+mem = CognitiveMemory(adapter=adapter)
+```
+
+### TypeScript usage
+
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+
+const adapter = new PostgresAdapter({
+    connectionString: process.env.DATABASE_URL!,
+});
+
+const mem = new CognitiveMemory({
+    adapter,
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+```
+
+## Schema
+
+The adapter auto-creates tables on first use:
+
+```sql
+CREATE TABLE memories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(1536),
+    memory_type TEXT NOT NULL DEFAULT 'semantic',
+    importance REAL NOT NULL DEFAULT 0.5,
+    stability REAL NOT NULL DEFAULT 0.3,
+    access_count INTEGER DEFAULT 0,
+    last_accessed BIGINT,
+    retention REAL DEFAULT 1.0,
+    metadata JSONB,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    tier TEXT DEFAULT 'hot'  -- 'hot', 'cold', 'stub'
+);
+
+CREATE TABLE memory_links (
+    source_id UUID REFERENCES memories(id),
+    target_id UUID REFERENCES memories(id),
+    strength REAL NOT NULL DEFAULT 0.5,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (source_id, target_id)
+);
+
+-- HNSW index for fast vector search
+CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+
+-- Query optimization indexes
+CREATE INDEX ON memories (user_id, tier);
+CREATE INDEX ON memories (user_id, retention);
+```
+
+## Vector search performance
+
+pgvector with HNSW indexing provides approximate nearest neighbor search in sub-100ms, even at millions of rows.
+
+| Memory count | Brute-force (InMemory) | pgvector HNSW |
+|-------------|----------------------|---------------|
+| 1,000 | 2ms | 1ms |
+| 10,000 | 15ms | 2ms |
+| 100,000 | 150ms | 5ms |
+| 1,000,000 | 1,500ms | 10ms |
+
+### Tuning HNSW parameters
+
+```sql
+-- Higher ef_search = more accurate but slower
+SET hnsw.ef_search = 100;  -- default: 40
+
+-- Higher m = more connections per node, better recall
+-- Set at index creation time
+CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 32, ef_construction = 128);
+```
+
+## Multi-tenant usage
+
+The Postgres adapter naturally supports multi-tenancy through the `user_id` column. All queries are scoped to the current user:
+
+```python
+# Each user gets their own memory space
+mem_alice = CognitiveMemory(adapter=PostgresAdapter(...), config={"user_id": "alice"})
+mem_bob = CognitiveMemory(adapter=PostgresAdapter(...), config={"user_id": "bob"})
+```
+
+## Transactions
+
+The Postgres adapter supports real transactions:
+
+```python
+async with adapter.transaction() as txn:
+    await txn.create(memory1)
+    await txn.create(memory2)
+    # Both commit or neither does
+```
+
+## Connection pooling
+
+For production, use connection pooling:
+
+```python
+adapter = PostgresAdapter(
+    connection_string="postgresql://...",
+    pool_min_size=5,
+    pool_max_size=20,
+)
+```
+
+## When to use
+
+- Production web applications
+- Multi-user systems
+- Large memory collections (10,000+ memories)
+- Any scenario requiring concurrent access
+- When you need reliable, battle-tested infrastructure
+
+## When NOT to use
+
+- Quick prototyping (use InMemory)
+- Serverless functions with cold starts (use Convex)
+- Scenarios where you can't run Postgres

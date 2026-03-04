@@ -1,0 +1,196 @@
+---
+title: Tuning Guide
+description: How to tune Cognitive Memory parameters for your specific workload.
+---
+
+## General approach
+
+Tuning Cognitive Memory is an empirical process. The defaults are optimized for the LoCoMo benchmark (long multi-session conversations), but your workload may differ. The general approach:
+
+1. Identify your bottleneck (retrieval precision, recall, decay behavior)
+2. Adjust the relevant parameter(s)
+3. Measure the effect on your test set
+4. Repeat
+
+## The most impactful parameters
+
+In order of impact on retrieval quality:
+
+### 1. top_k (search parameter)
+
+This isn't a config parameter — it's passed to `search()`. But it's the single most impactful knob.
+
+| Value | Effect |
+|:-----:|--------|
+| 5-10 | Precise but may miss relevant memories |
+| 20-40 | Balanced. Good for most applications |
+| 60+ | Broad recall. Catches weak matches. Best with re-ranking |
+
+Our benchmark results jumped +14pp going from k=10 to k=60. If you're missing relevant memories, increase k first.
+
+### 2. retrieval_score_exponent (alpha)
+
+Controls how aggressively decay affects retrieval ranking.
+
+```python
+config = CognitiveMemoryConfig(retrieval_score_exponent=0.3)
+```
+
+| Value | Effect |
+|:-----:|--------|
+| 0.1 | Nearly ignores decay. Old memories rank as high as recent ones |
+| 0.3 | **Default.** Balanced |
+| 0.5 | Moderately favors recent memories |
+| 1.0 | Strong recency bias. Old memories are effectively suppressed |
+
+**Tune lower** if your application needs historical recall (medical history, legal records).
+**Tune higher** if your application deals with rapidly changing information (news, real-time data).
+
+### 3. deep_recall (search parameter)
+
+```python
+results = mem.search(query, deep_recall=True)
+```
+
+Enable deep recall when precision matters — specific dates, names, and numbers that might have been lost during consolidation. The 0.5 penalty prevents superseded memories from drowning out summaries.
+
+## Decay tuning
+
+### Base decay rates
+
+The base rates (45 days episodic, 120 days semantic) determine how quickly memories fade. These are module constants, not config parameters, but you can effectively adjust them by tuning stability.
+
+### Stability initialization
+
+New memories start with stability = `0.1 + (importance * 0.3)`. Importance is set by the LLM extractor (0.0-1.0).
+
+| Importance | Initial stability | Effect |
+|:----------:|:-----------------:|--------|
+| 0.0 | 0.10 | Fades very quickly |
+| 0.5 | 0.25 | Moderate |
+| 1.0 | 0.40 | Fades slowly |
+
+If memories are fading too fast, consider:
+- Increasing `direct_boost` to make retrieval strengthening more aggressive
+- Using the `custom_extraction_instructions` to bias the LLM toward higher importance scores
+
+### Spaced repetition tuning
+
+```python
+config = CognitiveMemoryConfig(
+    direct_boost=0.1,
+    associative_boost=0.03,
+    max_spaced_rep_multiplier=2.0,
+    spaced_rep_interval_days=7.0,
+)
+```
+
+- **Higher `direct_boost`** (0.15-0.2): Memories stabilize faster with fewer retrievals
+- **Lower `spaced_rep_interval_days`** (3-5): Full boost kicks in sooner after access
+- **Higher `max_spaced_rep_multiplier`** (3.0): Larger boosts for long-idle memories
+
+## Association tuning
+
+### Synaptic tagging threshold
+
+Currently hardcoded at similarity >= 0.4 for ingestion-time association creation. If you're getting too many associations (noisy), this threshold would need to be raised in the source code. If too few associations (missing multi-hop paths), lower it.
+
+### Co-retrieval strengthening
+
+```python
+config = CognitiveMemoryConfig(
+    association_strengthen_amount=0.1,
+    association_retrieval_threshold=0.3,
+    association_decay_constant_days=90.0,
+)
+```
+
+- **Higher `association_strengthen_amount`** (0.15-0.2): Associations build faster
+- **Lower `association_retrieval_threshold`** (0.2): More associations activate during search (more multi-hop, but more noise)
+- **Higher `association_decay_constant_days`** (120-180): Associations persist longer without reinforcement
+
+## Core promotion tuning
+
+```python
+config = CognitiveMemoryConfig(
+    core_access_threshold=10,
+    core_stability_threshold=0.85,
+    core_session_threshold=3,
+)
+```
+
+### Too few core promotions?
+
+- Lower `core_access_threshold` to 5-7
+- Lower `core_stability_threshold` to 0.7
+- Lower `core_session_threshold` to 2
+
+### Too many core promotions?
+
+- Raise `core_access_threshold` to 15-20
+- Raise `core_session_threshold` to 5+
+
+Core memories are protected (0.60 floor, no cold migration). Promoting too aggressively can make the system "sticky" — old information never fades.
+
+## Consolidation tuning
+
+```python
+config = CognitiveMemoryConfig(
+    consolidation_retention_threshold=0.20,
+    consolidation_group_size=5,
+    consolidation_similarity_threshold=0.70,
+)
+```
+
+- **Lower `consolidation_retention_threshold`** (0.10): Only consolidate very faded memories. More originals stay in hot store.
+- **Higher `consolidation_retention_threshold`** (0.30): Consolidate earlier. Reduces hot-store noise faster.
+- **Smaller `consolidation_group_size`** (3): More frequent consolidation events.
+- **Lower `consolidation_similarity_threshold`** (0.50): Larger, more diverse groups.
+
+## Tiered storage tuning
+
+```python
+config = CognitiveMemoryConfig(
+    cold_migration_days=7,
+    cold_storage_ttl_days=180,
+)
+```
+
+- **Shorter `cold_migration_days`** (3): Memories leave hot store faster. Reduces search noise but may lose multi-hop paths.
+- **Longer `cold_storage_ttl_days`** (365): Cold memories survive longer before becoming stubs. More data for deep recall.
+
+## Extraction tuning
+
+### Model choice
+
+```python
+config = CognitiveMemoryConfig(
+    extraction_model="gpt-4o-mini",
+)
+```
+
+- `gpt-4o-mini`: Fast, cheap, good enough for most use cases
+- `gpt-4o`: Better extraction quality, 10x cost
+- `gpt-4.1-mini`: Newer, potentially better extraction
+
+### Custom instructions
+
+```python
+config = CognitiveMemoryConfig(
+    custom_extraction_instructions="Focus on medical information and dietary restrictions."
+)
+```
+
+Use this to bias extraction toward your domain-specific needs.
+
+## Measuring quality
+
+The best way to measure tuning impact:
+
+1. Build a test set of 50-100 question-answer pairs from your domain
+2. Ingest the relevant conversations
+3. Run searches for each question
+4. Score answers against ground truth
+5. Track overall accuracy and multi-hop accuracy separately
+
+Avoid tuning on individual examples — optimize for aggregate metrics across your test set.

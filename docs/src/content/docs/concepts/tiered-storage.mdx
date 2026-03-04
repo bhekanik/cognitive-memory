@@ -1,0 +1,130 @@
+---
+title: Tiered Storage
+description: How memories move through hot, cold, and stub tiers based on their retention.
+---
+
+## Three storage tiers
+
+Cognitive Memory uses a tiered storage model that mirrors how the brain manages memories at different stages of consolidation.
+
+| Tier | Vector search | ID lookup | Contains embedding | Typical state |
+|------|:------------:|:---------:|:-----------------:|--------------|
+| **Hot** | Yes | Yes | Yes | Active, recently used |
+| **Cold** | No | Yes | Yes | Faded, accessible via associations |
+| **Stub** | No | Yes | No | Archived summary, minimal footprint |
+
+## Hot tier
+
+The default home for all memories. Hot memories are fully indexed and vector-searchable. When you call `search()`, only hot memories are queried by cosine similarity.
+
+All new memories start in the hot tier. They stay here as long as they maintain retention above the floor level.
+
+## Cold tier
+
+Memories that have been sitting at their retention floor for too long are migrated to cold storage. Cold memories:
+
+- Are accessible by ID (through association links or direct lookup)
+- Are NOT included in vector similarity searches
+- Still have their embeddings preserved
+- Can be reactivated back to hot if retrieved via an association
+
+### Migration to cold
+
+A memory moves from hot to cold when:
+1. Its retention equals its floor (within 0.001 tolerance)
+2. It has been at floor for `cold_migration_days` consecutive days (default: 7)
+3. It is NOT a core memory (core memories are exempt)
+
+Superseded memories (originals that were consolidated) move to cold immediately.
+
+```python
+async def run_cold_migration(self, now):
+    for mem in await self.adapter.all_hot():
+        if mem.category == MemoryCategory.CORE:
+            continue
+        if mem.is_superseded:
+            await self.adapter.migrate_to_cold(mem.id, now)
+            continue
+
+        retention = self.compute_retention(mem, now)
+        at_floor = abs(retention - mem.floor) < 0.001
+
+        if at_floor:
+            mem.days_at_floor += 1
+        else:
+            mem.days_at_floor = 0
+
+        if mem.days_at_floor >= threshold_days:
+            await self.adapter.migrate_to_cold(mem.id, now)
+```
+
+### Reactivation to hot
+
+When a cold memory is retrieved through an association link during search, it's migrated back to hot:
+
+```python
+if result.memory.is_cold:
+    await self.adapter.migrate_to_hot(result.memory.id)
+```
+
+This resets `is_cold`, `cold_since`, and `days_at_floor`. The memory gets a retrieval boost and starts decaying from a fresh `last_accessed_at` timestamp.
+
+## Stub tier
+
+After spending `cold_storage_ttl_days` (default: 180) in cold storage, a memory is converted to a stub. Stubs are:
+
+- Lightweight: only the first 200 characters of content, prefixed with `[archived]`
+- No embedding
+- No association links
+- Zero retention
+- Minimal storage footprint
+
+Stubs exist as tombstones — they record that a memory once existed and provide a brief summary of what it contained. They're never returned in search results.
+
+```python
+async def run_cold_ttl_expiry(self, now):
+    for mem in await self.adapter.all_cold():
+        if mem.category == MemoryCategory.CORE:
+            continue
+        days_cold = (now - mem.cold_since).total_seconds() / 86400.0
+        if days_cold >= ttl_days:
+            stub_content = f"[archived] {mem.content[:200]}"
+            await self.adapter.convert_to_stub(mem.id, stub_content)
+```
+
+## Configuration
+
+```python
+config = CognitiveMemoryConfig(
+    cold_migration_days=7,       # days at floor before cold migration
+    cold_storage_ttl_days=180,   # days in cold before stub conversion
+)
+```
+
+## Lifecycle diagram
+
+```
+[Created] --> HOT (vector-searchable)
+                |
+                | retention at floor for 7+ days
+                v
+              COLD (ID-only access)
+                |
+                |--- retrieved via association ---> back to HOT
+                |
+                | 180 days in cold
+                v
+              STUB (archived summary)
+```
+
+Core memories skip this entirely — they stay in HOT indefinitely, protected by the 0.60 floor.
+
+## Why tiered storage matters
+
+Without tiered storage, the hot tier would grow without bound. Every memory ever stored would compete for attention during vector search, making retrieval slower and noisier.
+
+Tiered storage provides:
+1. **Search quality:** Only relevant, retained memories participate in vector search
+2. **Storage efficiency:** Cold and stub tiers have minimal footprint
+3. **Graceful degradation:** Memories don't disappear suddenly — they fade through hot -> cold -> stub
+4. **Resurrection:** Cold memories can return through association links, preserving multi-hop reasoning paths

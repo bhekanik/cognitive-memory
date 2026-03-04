@@ -1,0 +1,200 @@
+---
+title: TypeScript Quickstart
+description: Install the TypeScript SDK and store your first memory in under 5 minutes.
+---
+
+## Installation
+
+```bash
+npm install cognitive-memory
+# or
+pnpm add cognitive-memory
+# or
+bun add cognitive-memory
+```
+
+The SDK is ESM-only and requires Node.js 18+ or Bun.
+
+## Basic usage
+
+```typescript
+import { CognitiveMemory, InMemoryAdapter } from "cognitive-memory";
+import type { EmbeddingProvider } from "cognitive-memory";
+
+// You need an embedding provider — bring your own or use OpenAI:
+const embeddingProvider: EmbeddingProvider = {
+  async embed(text: string): Promise<number[]> {
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    return response.data[0].embedding;
+  },
+};
+
+const mem = new CognitiveMemory({
+  adapter: new InMemoryAdapter(),
+  embeddingProvider,
+  userId: "user-123",
+});
+
+// Store a memory
+const id = await mem.store({
+  content: "User is allergic to shellfish",
+  memoryType: "semantic",
+  importance: 0.9,
+});
+
+// Retrieve memories
+const results = await mem.retrieve({
+  query: "what food allergies does the user have?",
+  limit: 5,
+});
+
+for (const result of results) {
+  console.log(`${result.content} (score=${result.finalScore.toFixed(3)})`);
+}
+```
+
+## Memory types
+
+When storing a memory, specify the type to control its decay behavior:
+
+```typescript
+// Episodic: specific events, 30-day base decay
+await mem.store({
+  content: "User went hiking at Mount Rainier on March 12",
+  memoryType: "episodic",
+});
+
+// Semantic: lasting facts, 90-day base decay
+await mem.store({
+  content: "User prefers dark roast coffee",
+  memoryType: "semantic",
+});
+
+// Procedural: skills and routines, never decays
+await mem.store({
+  content: "User runs every morning at 6am",
+  memoryType: "procedural",
+});
+```
+
+You can also let the SDK auto-categorize using the `categorizeMemoryType` utility:
+
+```typescript
+import { categorizeMemoryType } from "cognitive-memory";
+
+const type = categorizeMemoryType("I went to the store yesterday");
+// => "episodic"
+```
+
+## Retrieval with associations
+
+By default, retrieval includes associatively linked memories:
+
+```typescript
+const results = await mem.retrieve({
+  query: "coffee preferences",
+  limit: 5,
+  includeAssociations: true, // default
+  minRetention: 0.2,        // filter out very faded memories
+});
+```
+
+Each result includes scoring metadata:
+
+```typescript
+interface ScoredMemory extends Memory {
+  relevanceScore: number;  // cosine similarity to query
+  finalScore: number;      // relevance * retention
+}
+```
+
+## Linking memories
+
+Create explicit associations between memories:
+
+```typescript
+await mem.link(memoryId1, memoryId2, 0.7);
+```
+
+Links are also created automatically when memories are co-retrieved — this is the co-retrieval strengthening mechanism.
+
+## Consolidation
+
+Run consolidation periodically to compress fading memories and clean up stale data:
+
+```typescript
+const result = await mem.consolidate();
+
+console.log(`Decayed: ${result.decayed.length}`);
+console.log(`Compressed: ${result.compressed.length} groups`);
+console.log(`Promotion candidates: ${result.promotionCandidates.length}`);
+console.log(`Deleted: ${result.deleted}`);
+```
+
+Consolidation does four things:
+1. Identifies fading memories (retention < 0.2)
+2. Groups similar fading memories by topic
+3. Compresses groups of 5+ into summaries, superseding originals
+4. Deletes very faded memories (retention < 0.05, 30+ days stale)
+
+## Choosing an adapter
+
+```typescript
+import { InMemoryAdapter } from "cognitive-memory";
+import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
+
+// In-memory (testing, prototyping)
+const mem1 = new CognitiveMemory({
+  adapter: new InMemoryAdapter(),
+  embeddingProvider,
+  userId: "user-1",
+});
+
+// Postgres with pgvector (production)
+const mem2 = new CognitiveMemory({
+  adapter: new PostgresAdapter({ connectionString: process.env.DATABASE_URL }),
+  embeddingProvider,
+  userId: "user-1",
+});
+
+// JSONL file (local development, debugging)
+const mem3 = new CognitiveMemory({
+  adapter: new JsonlAdapter({ filePath: "./memories.jsonl" }),
+  embeddingProvider,
+  userId: "user-1",
+});
+```
+
+See the [Adapters overview](/adapters/overview/) for the full list and decision matrix.
+
+## Configuration
+
+```typescript
+const mem = new CognitiveMemory({
+  adapter: new InMemoryAdapter(),
+  embeddingProvider,
+  userId: "user-123",
+  config: {
+    defaultImportance: 0.5,
+    defaultStability: 0.3,
+    minRetention: 0.2,
+    decayRates: {
+      episodic: 30,    // days
+      semantic: 90,    // days
+      procedural: Infinity,
+    },
+  },
+});
+```
+
+See [Configuration reference](/api/configuration/) for the complete parameter list.
+
+## Next steps
+
+- [Concepts overview](/concepts/overview/) — understand the cognitive model
+- [API reference](/api/typescript/) — full TypeScript API docs
+- [Adapters](/adapters/overview/) — choose the right storage backend
