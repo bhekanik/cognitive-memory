@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+      sdks-python--release_created: ${{ steps.release.outputs['sdks/python--release_created'] }}
+      sdks-python--tag_name: ${{ steps.release.outputs['sdks/python--tag_name'] }}
+      sdks-typescript--release_created: ${{ steps.release.outputs['sdks/typescript--release_created'] }}
+      sdks-typescript--tag_name: ${{ steps.release.outputs['sdks/typescript--tag_name'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-pypi:
+    needs: release-please
+    if: needs.release-please.outputs['sdks-python--release_created'] == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: sdks/python/dist/
+
+  publish-npm:
+    needs: release-please
+    if: needs.release-please.outputs['sdks-typescript--release_created'] == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install and build
+        run: |
+          bun install
+          bun run build
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

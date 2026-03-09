@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "sdks/python": {
+      "release-type": "python",
+      "component": "cognitive-memory-python",
+      "package-name": "cognitive-memory",
+      "bump-minor-pre-major": true,
+      "extra-files": []
+    },
+    "sdks/typescript": {
+      "release-type": "node",
+      "component": "cognitive-memory",
+      "package-name": "cognitive-memory",
+      "bump-minor-pre-major": true
+    }
+  },
+  "separate-pull-requests": false
+}
