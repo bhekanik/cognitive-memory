@@ -24,6 +24,18 @@ candidates = await self.adapter.search_similar(
 
 The search requests 3x the desired result count to ensure enough candidates survive scoring and filtering.
 
+### Stage 1b: Lexical/BM25 search (v6, when hybrid enabled)
+
+When `hybrid_search` / `hybridSearch` is enabled, a parallel BM25 lexical search runs against the adapter's `search_lexical` / `searchLexical` method:
+
+```python
+lexical_candidates = await self.adapter.search_lexical(
+    query_text, top_k=k_sparse,
+)
+```
+
+Results are unioned with the dense candidates from Stage 1. Duplicate memories (found by both paths) are kept once. This ensures exact keyword matches surface even when they aren't the closest vectors.
+
 ### Stage 2: Retention-weighted scoring
 
 Each candidate is scored with the R^alpha formula:
@@ -42,6 +54,14 @@ combined_score *= deep_recall_penalty  # default: 0.5
 
 Candidates are sorted by combined score, and the top-k are selected as direct results.
 
+### Stage 2b: Validity filtering (v6)
+
+Candidates with semantic type `plan` or `transient_state` whose validity window has expired are removed from the candidate pool, unless `include_expired_transients=True` or deep recall is active with `include_expired_in_deep_recall=True`. See [Deep Recall — Validity-based filtering](/concepts/deep-recall/#validity-based-filtering) for details.
+
+### Stage 2c: LLM reranking (optional)
+
+When `rerank_enabled` / `rerankEnabled` is `True` and an LLM provider is available, the top `k_rerank` candidates (default 10) from Stage 2/2b are sent to the LLM for relevance reranking. The LLM re-scores each candidate against the original query, and candidates are re-sorted by the LLM-assigned scores. This can significantly improve precision for ambiguous or nuanced queries at the cost of additional latency and token usage. The model used defaults to the configured extraction model unless `rerank_model` / `rerankModel` is set explicitly.
+
 ### Stage 3: Associative expansion
 
 For each direct result, the engine looks up its association graph:
@@ -57,6 +77,10 @@ for result in direct_results:
 Associated memories are scored by their own similarity and retention, multiplied by the association weight. Only associations with weight >= 0.3 (after decay) are activated.
 
 This stage can pull in memories from cold storage — if a cold memory is linked to a direct result, it's scored and included.
+
+### Stage 3b: Graph expansion + bridge discovery (v6)
+
+After associative expansion, the engine performs a second hop through the association graph looking for **bridge memories** — nodes that connect otherwise unrelated clusters. Bridge memories are scored and included if they exceed a minimum relevance threshold, enabling cross-topic recall.
 
 ### Stage 4: Retrieval boosting
 
@@ -102,36 +126,82 @@ all_results.sort(key=lambda x: x.combined_score, reverse=True)
 return all_results[:top_k]
 ```
 
-## What the caller receives
+## What the caller receives (v6 breaking change)
 
-Each result in the returned list is a `SearchResult` (Python) or `ScoredMemory` (TypeScript):
+In v6, `search()` returns a **`SearchResponse`** wrapper instead of a bare list. This is a breaking change from v5.
 
 <Tabs syncKey="lang">
   <TabItem label="Python">
-    SearchResult type:
-
     ```python
     @dataclass
+    class SearchResponse:
+        results: list[SearchResult]  # ranked results (same as before)
+        trace: SearchTrace           # pipeline instrumentation
+
+    @dataclass
     class SearchResult:
-        memory: Memory           # the full memory object
-        relevance_score: float   # cosine similarity
-        retention_score: float   # R(m) from decay
-        combined_score: float    # relevance * retention^alpha
-        is_associative: bool     # came via association, not direct match
-        via_deep_recall: bool    # came from superseded memory in deep recall
+        memory: Memory
+        relevance_score: float
+        retention_score: float
+        combined_score: float
+        is_associative: bool
+        via_deep_recall: bool
+
+    @dataclass
+    class SearchTrace:
+        stages: list[StageTrace]
+        total_ms: float
+        total_tokens: int    # sum of all prompt + completion tokens across stages
+
+    @dataclass
+    class StageTrace:
+        name: str            # e.g. "vector_search", "bm25_search", "validity_filter", "rerank"
+        candidate_count: int # candidates entering this stage
+        survivor_count: int  # candidates leaving this stage
+        duration_ms: float
+        prompt_tokens: int   # LLM prompt tokens used (0 for non-LLM stages)
+        completion_tokens: int # LLM completion tokens used (0 for non-LLM stages)
     ```
   </TabItem>
   <TabItem label="TypeScript">
-    ScoredMemory type:
-
     ```typescript
+    interface SearchResponse {
+        results: ScoredMemory[];
+        trace: SearchTrace;
+    }
+
     interface ScoredMemory extends Memory {
-        relevanceScore: number;  // cosine similarity
-        finalScore: number;      // relevance * retention
+        relevanceScore: number;
+        finalScore: number;
+    }
+
+    interface SearchTrace {
+        stages: StageTrace[];
+        totalMs: number;
+        totalTokens: number;       // sum of all prompt + completion tokens across stages
+    }
+
+    interface StageTrace {
+        name: string;
+        candidateCount: number;
+        survivorCount: number;
+        durationMs: number;
+        promptTokens: number;      // LLM prompt tokens used (0 for non-LLM stages)
+        completionTokens: number;  // LLM completion tokens used (0 for non-LLM stages)
     }
     ```
   </TabItem>
 </Tabs>
+
+### Trace / instrumentation
+
+The `SearchTrace` attached to every response provides full visibility into the pipeline. Each `StageTrace` records the stage name, how many candidates entered and survived, and wall-clock time. This is useful for debugging relevance issues, tuning `top_k` multipliers, and understanding why specific memories did or did not appear.
+
+```python
+response = await mem.search("coffee preferences")
+for stage in response.trace.stages:
+    print(f"{stage.name}: {stage.candidate_count} -> {stage.survivor_count} ({stage.duration_ms:.1f}ms)")
+```
 
 ## Pipeline summary
 
@@ -142,13 +212,17 @@ Query text
 Embed query
     |
     v
-Stage 1: Vector search (hot store, top_k * 3)
+Stage 1:  Vector search (hot store, top_k * 3)
+Stage 1b: BM25 lexical search (if hybrid enabled)
     |
     v
-Stage 2: Score by sim * R^alpha (sort, take top_k)
+Stage 2:  Score by sim * R^alpha (sort, take top_k)
+Stage 2b: Validity filtering (expired plan/transient exclusion)
+Stage 2c: LLM reranking (if rerank_enabled)
     |
     v
-Stage 3: Expand via associations (cold store too)
+Stage 3:  Expand via associations (cold store too)
+Stage 3b: Graph expansion + bridge discovery
     |
     v
 Stage 4: Apply direct/associative boosts
@@ -160,7 +234,7 @@ Stage 5: Check core promotions
 Stage 6: Strengthen co-retrieved associations
     |
     v
-Merge, sort, return top_k
+Merge, sort, return SearchResponse (results + trace)
 ```
 
 Every search actively reshapes the memory system: boosting stabilities, creating/strengthening associations, promoting cores, and reactivating cold memories. The system gets smarter with every query.

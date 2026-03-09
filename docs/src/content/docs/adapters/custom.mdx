@@ -109,6 +109,25 @@ Both Python and TypeScript SDKs define an abstract `MemoryAdapter` class. Your c
   </TabItem>
 </Tabs>
 
+## Optional: Lexical search
+
+Custom adapters may optionally implement `search_lexical` (Python) / `searchLexical` (TypeScript) to support hybrid retrieval. The default implementation returns an empty list, so hybrid search gracefully falls back to vector-only if not implemented.
+
+```python
+# Python
+async def search_lexical(self, query_text: str, top_k: int = 10) -> list[tuple[Memory, float]]:
+    # Implement BM25, full-text search, or any keyword-based retrieval
+    ...
+```
+
+```typescript
+// TypeScript
+async searchLexical(queryText: string, topK?: number): Promise<ScoredMemory[]> {
+    // Implement keyword-based retrieval
+    ...
+}
+```
+
 ## Key implementation details
 
 ### search_similar / vectorSearch

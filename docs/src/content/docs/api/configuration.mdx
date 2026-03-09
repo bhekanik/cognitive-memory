@@ -21,6 +21,8 @@ mem = CognitiveMemory(config=config)
 | Parameter | Type | Default | Description |
 |-----------|------|:-------:|-------------|
 | `faint_threshold` | `float` | `0.15` | Retention below which a memory is "faint" |
+| `decay_model` | `str` | `"exponential"` | Decay curve: `"exponential"` or `"power"` |
+| `power_decay_gamma` | `float` | `1.4427` | Gamma exponent for power-law decay (only used when `decay_model="power"`) |
 
 The base decay rates and floors are defined as module-level constants:
 
@@ -32,6 +34,29 @@ The base decay rates and floors are defined as module-level constants:
 | `BASE_DECAY_RATES[CORE]` | 120.0 | Core decay rate (days) |
 | `DECAY_FLOORS["core"]` | 0.60 | Core retention floor |
 | `DECAY_FLOORS["regular"]` | 0.02 | Regular retention floor |
+
+### Hybrid search
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `hybrid_search` | `bool` | `False` | Enable hybrid (semantic + lexical) search |
+| `k_sparse` | `int` | `30` | Number of lexical candidates for hybrid search |
+
+### Validity
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `filter_expired_transients` | `bool` | `True` | Filter out transient memories past their expiry |
+| `include_expired_in_deep_recall` | `bool` | `True` | Include expired transients when deep recall is enabled |
+
+### Graph
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `graph_expansion_hops` | `int` | `1` | Number of association hops for graph-based retrieval expansion |
+| `bridge_discovery` | `bool` | `False` | Enable discovery of bridge paths between memories |
+| `max_bridge_paths` | `int` | `3` | Maximum number of bridge paths to return |
+| `min_bridge_edge_weight` | `float` | `0.3` | Minimum edge weight for bridge path traversal |
 
 ### Retrieval scoring
 
@@ -91,6 +116,14 @@ The base decay rates and floors are defined as module-level constants:
 |-----------|------|:-------:|-------------|
 | `run_maintenance_during_ingestion` | `bool` | `True` | Run tick() every 5 ingestions |
 
+### Reranking
+
+| Parameter | Type | Default | Description |
+|-----------|------|:-------:|-------------|
+| `rerank_enabled` | `bool` | `False` | Enable LLM reranking of top candidates |
+| `k_rerank` | `int` | `10` | Number of top candidates to send to LLM for reranking |
+| `rerank_model` | `str \| None` | `None` | Model for reranking; defaults to extraction model if not set |
+
 ### Extraction
 
 | Parameter | Type | Default | Description |
@@ -146,6 +179,19 @@ The TypeScript SDK exposes the same parameters as Python, using camelCase naming
 | `coldMigrationDays` | `number` | `7` | Days at floor before cold migration |
 | `coldStorageTtlDays` | `number` | `180` | Days in cold before stub conversion |
 | `deepRecallPenalty` | `number` | `0.5` | Score multiplier for superseded memories |
+| `decayModel` | `string` | `"exponential"` | Decay curve: `"exponential"` or `"power"` |
+| `powerDecayGamma` | `number` | `1.4427` | Gamma exponent for power-law decay |
+| `hybridSearch` | `boolean` | `false` | Enable hybrid (semantic + lexical) search |
+| `kSparse` | `number` | `30` | Number of lexical candidates for hybrid search |
+| `filterExpiredTransients` | `boolean` | `true` | Filter out transient memories past their expiry |
+| `includeExpiredInDeepRecall` | `boolean` | `true` | Include expired transients when deep recall is enabled |
+| `graphExpansionHops` | `number` | `1` | Number of association hops for graph-based retrieval expansion |
+| `bridgeDiscovery` | `boolean` | `false` | Enable discovery of bridge paths between memories |
+| `maxBridgePaths` | `number` | `3` | Maximum number of bridge paths to return |
+| `minBridgeEdgeWeight` | `number` | `0.3` | Minimum edge weight for bridge path traversal |
+| `rerankEnabled` | `boolean` | `false` | Enable LLM reranking of top candidates |
+| `kRerank` | `number` | `10` | Number of top candidates to send to LLM for reranking |
+| `rerankModel` | `string \| null` | `null` | Model for reranking; defaults to extraction model if not set |
 | `extractionMode` | `string` | `"semantic"` | `"raw"`, `"semantic"`, or `"hybrid"` |
 | `extractionModel` | `string` | `"gpt-4o-mini"` | LLM for extraction |
 | `customExtractionInstructions` | `string \| null` | `null` | Prepend to extraction prompt |
@@ -158,6 +204,22 @@ The TypeScript SDK exposes the same parameters as Python, using camelCase naming
 config = CognitiveMemoryConfig(
     # Decay
     faint_threshold=0.15,
+    decay_model="exponential",
+    power_decay_gamma=1.4427,
+
+    # Hybrid search
+    hybrid_search=False,
+    k_sparse=30,
+
+    # Validity
+    filter_expired_transients=True,
+    include_expired_in_deep_recall=True,
+
+    # Graph
+    graph_expansion_hops=1,
+    bridge_discovery=False,
+    max_bridge_paths=3,
+    min_bridge_edge_weight=0.3,
 
     # Retrieval scoring
     retrieval_score_exponent=0.3,
@@ -197,6 +259,11 @@ config = CognitiveMemoryConfig(
     extraction_mode="semantic",
     extraction_model="gpt-4o-mini",
     custom_extraction_instructions=None,
+
+    # Reranking
+    rerank_enabled=False,
+    k_rerank=10,
+    rerank_model=None,
 
     # Models
     embedding_model="text-embedding-3-small",

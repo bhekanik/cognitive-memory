@@ -47,21 +47,27 @@ const id = await mem.store({
 
 Returns the created memory ID.
 
-#### `retrieve(query: RetrievalQuery): Promise<ScoredMemory[]>`
+#### `retrieve(query: RetrievalQuery): Promise<SearchResponse>`
 
 Retrieve memories relevant to a query. Combines semantic similarity with retention weighting. Includes associative expansion by default.
 
 ```typescript
-const results = await mem.retrieve({
+const response = await mem.retrieve({
     query: "what is the user allergic to?",
     limit: 5,                       // default: 5
     minRetention: 0.2,              // default: config.minRetention
     memoryTypes: ["semantic"],       // optional filter
     includeAssociations: true,       // default: true
+    trace: false,                    // default: false
 });
+const results = response.results;
 ```
 
-Returns `ScoredMemory[]` sorted by `finalScore` descending. Each result includes `relevanceScore` and `finalScore`.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `trace` | `boolean` | `false` | When `true`, the response includes a `trace` field with scoring breakdown and pipeline timing details |
+
+Returns a `SearchResponse` object containing a `results` array of `ScoredMemory` objects sorted by `finalScore` descending, and an optional `trace` field when tracing is enabled.
 
 Side effects: strengthens retrieved memories (access count, stability, last accessed) and co-retrieval associations.
 
@@ -167,6 +173,31 @@ interface RetrievalQuery {
     minRetention?: number;        // default: config.minRetention
     memoryTypes?: MemoryType[];
     includeAssociations?: boolean; // default: true
+    trace?: boolean;              // default: false
+}
+```
+
+### SearchResponse
+
+```typescript
+interface SearchResponse {
+    results: ScoredMemory[];
+    trace?: SearchTrace;          // present when trace=true
+}
+
+interface SearchTrace {
+    stages: StageTrace[];
+    totalMs: number;
+    totalTokens: number;          // sum of all prompt + completion tokens across stages
+}
+
+interface StageTrace {
+    name: string;
+    candidateCount: number;
+    survivorCount: number;
+    durationMs: number;
+    promptTokens: number;         // LLM prompt tokens used (0 for non-LLM stages)
+    completionTokens: number;     // LLM completion tokens used (0 for non-LLM stages)
 }
 ```
 

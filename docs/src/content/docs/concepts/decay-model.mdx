@@ -129,6 +129,48 @@ The core floor catches it at 60%.
 
 Note: The TypeScript SDK includes an additional frequency boost factor that provides diminishing returns based on access count.
 
+## Power-law decay
+
+In v6, an alternative **power-law** decay model is available alongside the default exponential curve. The formula:
+
+```
+R = max(floor, (1 + dt / (S * B * beta_c))^(-gamma))
+```
+
+Where all variables match the exponential model, and:
+- **gamma** = power-law exponent (default: `1 / ln(2)` ≈ 1.4427)
+
+### Why power-law?
+
+Exponential decay drops off sharply — memories become near-zero relatively quickly. Power-law decay has a **heavier tail**: it decays slower at large `dt`, keeping old memories slightly more alive. This better models real-world recall where distant memories don't vanish entirely but linger at low strength.
+
+### Configuration
+
+| Python | TypeScript | Description |
+|--------|------------|-------------|
+| `decay_model` | `decayModel` | `"exponential"` (default) or `"power"` |
+| `power_decay_gamma` | `powerDecayGamma` | Exponent for power-law decay (default: `1/ln(2)` ≈ 1.4427) |
+
+```python
+config = CognitiveMemoryConfig(
+    decay_model="power",
+    power_decay_gamma=1.4427,
+)
+```
+
+### Comparison at a glance
+
+For a memory with S=0.3, B=2.0, beta_c=120 (effective rate = 72 days):
+
+| dt (days) | Exponential R | Power-law R |
+|-----------|--------------|-------------|
+| 30 | 0.659 | 0.672 |
+| 90 | 0.287 | 0.410 |
+| 180 | 0.082 | 0.253 |
+| 365 | 0.007 | 0.146 |
+
+The power-law model retains significantly more signal at large time horizons.
+
 ## Key insight
 
 The decay model creates a natural priority ordering. Recent, important, frequently-accessed memories score highest. Old, unimportant, rarely-accessed memories fade toward zero. This happens automatically without any manual curation — the system self-organizes just like human memory.

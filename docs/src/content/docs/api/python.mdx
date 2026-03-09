@@ -71,21 +71,27 @@ memories = await mem.extract_and_store(
 
 Returns list of created `Memory` objects.
 
-#### `search(query, top_k, timestamp, session_id, deep_recall) -> list[SearchResult]`
+#### `search(query, top_k, timestamp, session_id, deep_recall, trace) -> SearchResponse`
 
 Search memories with full retention-weighted scoring, associative expansion, and retrieval boosting.
 
 ```python
-results = await mem.search(
+response = await mem.search(
     query="what is the user allergic to?",
     top_k=10,                              # default: 10
     timestamp=datetime(2024, 3, 20),       # default: now
     session_id="s2",                       # optional, for boost tracking
     deep_recall=False,                     # default: False
+    trace=False,                           # default: False
 )
+results = response.results
 ```
 
-Returns list of `SearchResult` objects sorted by `combined_score` descending.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `trace` | `bool` | `False` | When `True`, the response includes a `trace` field with scoring breakdown and pipeline timing details |
+
+Returns a `SearchResponse` object containing a `results` list of `SearchResult` objects sorted by `combined_score` descending, and an optional `trace` field when tracing is enabled.
 
 #### `tick(now=None)`
 

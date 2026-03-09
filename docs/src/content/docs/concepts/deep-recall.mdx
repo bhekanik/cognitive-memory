@@ -88,6 +88,35 @@ config = CognitiveMemoryConfig(
 - **Disable** (default) for general retrieval where summaries are sufficient
 - Consider enabling by default if your use case involves precise factual recall
 
+## Validity-based filtering
+
+In v6, memories with semantic type `plan` or `transient_state` can have validity windows (`valid_from` / `valid_until` / `ttl_seconds`). When a plan or transient memory's validity window has expired, it is **filtered out of search results by default**.
+
+This prevents stale plans ("User plans to visit Tokyo in June") and expired states ("User is jet-lagged") from polluting retrieval after they are no longer relevant.
+
+### Including expired memories
+
+There are two ways to surface expired plan/transient memories:
+
+1. **Deep recall mode** — when `deep_recall=True`, expired transients are included alongside superseded memories (both receive the deep recall penalty):
+
+```python
+results = await mem.search("tokyo trip", deep_recall=True)
+```
+
+2. **Explicit flag** — use `include_expired_transients=True` to include expired plan/transient memories without enabling full deep recall:
+
+```python
+results = await mem.search("tokyo trip", include_expired_transients=True)
+```
+
+### Configuration
+
+| Python | TypeScript | Description |
+|--------|------------|-------------|
+| `filter_expired_transients` | `filterExpiredTransients` | Filter expired plan/transient memories (default: `True`) |
+| `include_expired_in_deep_recall` | `includeExpiredInDeepRecall` | Include expired transients when deep_recall is enabled (default: `True`) |
+
 ### Performance note
 
 Deep recall increases the candidate pool size, which means more scoring computations. For most systems with < 10,000 memories, the overhead is negligible. For larger systems, use it selectively.

@@ -137,6 +137,10 @@ CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops)
     WITH (m = 32, ef_construction = 128);
 ```
 
+## Lexical search
+
+The Postgres adapter supports `search_lexical` / `searchLexical` using PostgreSQL's built-in full-text search (`ts_vector` / `to_tsquery`). When hybrid search is enabled, the adapter combines pgvector similarity results with lexical matches for improved retrieval accuracy. The required `tsvector` column and GIN index are auto-created alongside the schema.
+
 ## Multi-tenant usage
 
 The Postgres adapter naturally supports multi-tenancy through the `user_id` column. All queries are scoped to the current user:

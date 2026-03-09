@@ -132,6 +132,10 @@ Convex's reactivity means memory updates are instantly visible across all connec
 
 Convex handles scaling automatically. No connection pooling, no replica configuration, no capacity planning.
 
+## Lexical search
+
+Convex supports text search indexes, making it possible to implement `searchLexical` for hybrid retrieval. Add a `searchIndex` to your Convex schema on the `content` field and wire it to the adapter's `searchLexical` function mapping to enable keyword-based search alongside vector similarity.
+
 ## When to use
 
 - Next.js, React, or other frontend-framework-based applications

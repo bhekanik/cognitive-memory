@@ -87,6 +87,10 @@ Data is lost when the process exits. This is intentional — use it for testing,
   </TabItem>
 </Tabs>
 
+## Lexical search
+
+The InMemory adapter supports `search_lexical` / `searchLexical` via a built-in BM25 tokenizer. When hybrid search is enabled in the config, keyword queries are scored using BM25 over tokenized memory content and combined with vector similarity results. No external dependencies are required.
+
 ## When to use
 
 - Unit tests and integration tests

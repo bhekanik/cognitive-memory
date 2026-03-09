@@ -52,6 +52,36 @@ Consider two memories being scored against a query:
 
 Memory B wins despite being much older because its semantic relevance is strong enough to overcome the decay penalty. With raw retention (alpha=1.0), Memory B would score only 0.225 — a massive loss of signal.
 
+## Hybrid retrieval
+
+In v6, retrieval can combine dense (cosine similarity) search with **BM25 lexical search** for better coverage. Dense search excels at semantic similarity but can miss exact keyword matches; BM25 catches those.
+
+### How it works
+
+When hybrid search is enabled, both a dense vector search and a BM25 lexical search are performed. The candidate sets are **unioned** — any memory found by either method enters the scoring pipeline. Scores from both sources are combined using reciprocal rank fusion.
+
+### Configuration
+
+| Python | TypeScript | Description |
+|--------|------------|-------------|
+| `hybrid_search` | `hybridSearch` | Enable hybrid dense + BM25 retrieval (default: `False`) |
+| `k_sparse` | `kSparse` | Number of candidates from BM25 search (default: same as `top_k`) |
+
+```python
+config = CognitiveMemoryConfig(
+    hybrid_search=True,
+    k_sparse=20,
+)
+```
+
+### Adapter requirement
+
+BM25 search only activates when the storage adapter implements the `search_lexical` (Python) / `searchLexical` (TypeScript) method. If the adapter does not implement it, hybrid search silently falls back to dense-only retrieval.
+
+## LLM reranking (optional)
+
+After hybrid retrieval scoring, an optional LLM reranking step can further refine results. When `rerank_enabled` is `True` and an LLM is available, the top `k_rerank` candidates (default 10) are sent to the LLM, which re-scores them for relevance against the original query. This is especially useful for ambiguous queries where vector similarity alone may not capture intent. See the [Scoring Pipeline](/concepts/scoring-pipeline/#stage-2c-llm-reranking-optional) for details on where this fits in the pipeline.
+
 ## Deep recall penalty
 
 When [deep recall](/concepts/deep-recall/) is enabled, superseded memories (originals that were consolidated into summaries) can appear in results. These receive an additional penalty:

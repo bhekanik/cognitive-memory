@@ -100,6 +100,32 @@ Core memory behavior in TypeScript is handled through stability thresholds and m
 | `"semantic"` | 90 |
 | `"procedural"` | infinity |
 
+## Semantic types
+
+In v6, each memory also carries an orthogonal `memory_type` / `semanticType` classification that describes **what kind of information** the memory contains, independent of the episodic/semantic/procedural/core **decay category** above.
+
+| Semantic type | Description | Example |
+|---------------|-------------|---------|
+| `fact` | Objective statement about the world or user | "User is allergic to peanuts" |
+| `preference` | Subjective like, dislike, or opinion | "User prefers dark mode" |
+| `plan` | Future intention with a time horizon | "User plans to visit Tokyo in June" |
+| `transient_state` | Temporary condition or mood | "User is feeling stressed about the deadline" |
+| `other` | Anything that doesn't fit the above | Free-form notes |
+
+These two dimensions are **orthogonal**: a `plan` can be `episodic` (one-time trip) or `semantic` (recurring goal). A `preference` can be `core` (identity-defining taste) or `semantic` (casual opinion). The decay category controls *how fast* the memory fades; the semantic type controls *what kind of thing* it represents.
+
+### Validity intervals
+
+`plan` and `transient_state` memories support optional validity windows:
+
+| Field | Python | TypeScript | Description |
+|-------|--------|------------|-------------|
+| Start time | `valid_from` | `validFrom` | When the memory becomes relevant (ISO 8601 or `Date`) |
+| End time | `valid_until` | `validUntil` | When the memory expires (ISO 8601 or `Date`) |
+| TTL | `ttl_seconds` | `ttlSeconds` | Alternative to `valid_until` — seconds from creation |
+
+Expired `plan` and `transient_state` memories are filtered from search results by default. See [Deep Recall](/concepts/deep-recall/) for how to include them.
+
 ## How the extractor chooses
 
 The LLM extraction prompt uses these heuristics:

@@ -68,6 +68,21 @@ Must exclude:
 - Superseded memories (unless `include_superseded=True`)
 - Memories without embeddings
 
+### `search_lexical(query_text, top_k) -> list[tuple[Memory, float]]` *(optional)*
+
+Lexical (keyword) search over memory content. Used by the engine when hybrid search is enabled.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query_text` | `str` | -- | Raw query string |
+| `top_k` | `int` | 10 | Max results |
+
+Returns: List of `(Memory, relevance_score)` sorted by relevance descending.
+
+This method is **optional**. The default implementation returns an empty list. Adapters that support lexical search (BM25, `ts_vector`, text search indexes) should override it to enable hybrid retrieval.
+
+**TypeScript:** `searchLexical(queryText: string, topK?: number): Promise<ScoredMemory[]>` — also optional, defaults to returning an empty array.
+
 ---
 
 ## Tiered storage
