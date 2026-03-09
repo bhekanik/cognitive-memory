@@ -90,8 +90,11 @@ export function calculateRetention(
   // Combined decay constant
   const effectiveRate = S * importanceBoost * baseDecay;
 
-  // Exponential decay (Ebbinghaus curve)
-  const raw = Math.exp(-daysSinceAccess / effectiveRate);
+  // Decay calculation (exponential or power-law)
+  const decayModel = config?.decayModel ?? DEFAULT_CONFIG.decayModel;
+  const raw = decayModel === "power"
+    ? (1 + daysSinceAccess / effectiveRate) ** (-(config?.powerDecayGamma ?? DEFAULT_CONFIG.powerDecayGamma))
+    : Math.exp(-daysSinceAccess / effectiveRate);
 
   // Apply floor
   return Math.max(floor, Math.min(1, raw));

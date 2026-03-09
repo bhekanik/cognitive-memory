@@ -13,17 +13,24 @@
 import type { MemoryAdapter } from "../adapters/base";
 import { cosineSimilarity } from "../utils/embeddings";
 import { calculateRetention, updateStability } from "./decay";
+import type { LLMProvider } from "./extraction";
+import { rerankCandidates } from "./extraction";
 import type {
   Association,
   EmbeddingProvider,
   Memory,
   MemoryCategory,
   ResolvedCognitiveMemoryConfig,
+  SearchResponse,
   SearchResult,
+  SearchTrace,
+  SemanticType,
+  StageTrace,
 } from "./types";
 import { getRetentionFloor } from "./types";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const EXPIRABLE_TYPES: Set<string> = new Set(["plan", "transient_state"]);
 
 /**
  * The computational core. Operates on a MemoryAdapter and applies
@@ -59,7 +66,9 @@ export class CognitiveEngine {
     const B = Math.min(3.0, 1.0 + memory.importance * 2.0);
     const effectiveRate = S * B * baseDecay;
 
-    const raw = Math.exp(-daysSinceAccess / effectiveRate);
+    const raw = this.config.decayModel === "power"
+      ? (1 + daysSinceAccess / effectiveRate) ** (-this.config.powerDecayGamma)
+      : Math.exp(-daysSinceAccess / effectiveRate);
     return Math.max(floor, Math.min(1, raw));
   }
 
@@ -212,6 +221,110 @@ export class CognitiveEngine {
   }
 
   // ------------------------------------------------------------------
+  // Graph expansion / bridge discovery (v6)
+  // ------------------------------------------------------------------
+
+  private expandGraph(
+    anchors: Memory[],
+    now: number,
+    seenIds: Set<string>,
+    maxHops: number,
+  ): Array<{ memory: Memory; weight: number }> {
+    let frontier = anchors.slice();
+    const results: Array<{ memory: Memory; weight: number }> = [];
+
+    for (let hop = 0; hop < maxHops; hop++) {
+      const nextFrontier: Memory[] = [];
+      for (const mem of frontier) {
+        for (const assoc of Object.values(mem.associations)) {
+          const weight = this.decayAssociation(assoc, now);
+          if (weight < this.config.minBridgeEdgeWeight) continue;
+          if (seenIds.has(assoc.targetId)) continue;
+
+          const target = this.syncGet(assoc.targetId);
+          if (!target || target.isStub) continue;
+
+          seenIds.add(target.id);
+          results.push({ memory: target, weight });
+          nextFrontier.push(target);
+        }
+      }
+      frontier = nextFrontier;
+    }
+
+    return results;
+  }
+
+  private findBridgePaths(anchors: Memory[], now: number): string[][] {
+    if (anchors.length < 2) return [];
+
+    const chains: string[][] = [];
+    const anchorIds = anchors.slice(0, 3).map((m) => m.id);
+
+    for (let i = 0; i < anchorIds.length; i++) {
+      for (let j = i + 1; j < anchorIds.length; j++) {
+        const path = this.bfsPath(anchorIds[i], anchorIds[j], now, 3);
+        if (path && path.length > 2) {
+          chains.push(path);
+          if (chains.length >= this.config.maxBridgePaths) return chains;
+        }
+      }
+    }
+    return chains;
+  }
+
+  private bfsPath(
+    startId: string,
+    endId: string,
+    now: number,
+    maxDepth: number,
+  ): string[] | null {
+    const queue: string[][] = [[startId]];
+    const visited = new Set([startId]);
+
+    while (queue.length > 0) {
+      const path = queue.shift()!;
+      if (path.length > maxDepth + 1) break;
+
+      const currentId = path[path.length - 1];
+      const current = this.syncGet(currentId);
+      if (!current) continue;
+
+      for (const assoc of Object.values(current.associations)) {
+        const weight = this.decayAssociation(assoc, now);
+        if (weight < this.config.minBridgeEdgeWeight) continue;
+        if (visited.has(assoc.targetId)) continue;
+
+        const newPath = [...path, assoc.targetId];
+        if (assoc.targetId === endId) return newPath;
+
+        visited.add(assoc.targetId);
+        queue.push(newPath);
+      }
+    }
+
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // Validity filtering (v6)
+  // ------------------------------------------------------------------
+
+  private isExpired(memory: Memory, now: number): boolean {
+    if (!memory.semanticType || !EXPIRABLE_TYPES.has(memory.semanticType)) {
+      return false;
+    }
+    if (memory.validUntil != null && now > memory.validUntil) {
+      return true;
+    }
+    if (memory.ttlSeconds != null && memory.createdAt) {
+      const expiry = memory.createdAt + memory.ttlSeconds * 1000;
+      if (now > expiry) return true;
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------------
   // Full retrieval pipeline
   // ------------------------------------------------------------------
 
@@ -221,17 +334,56 @@ export class CognitiveEngine {
     topK: number = 10,
     sessionId?: string,
     deepRecall: boolean = false,
-  ): Promise<SearchResult[]> {
+    queryText?: string,
+    trace: boolean = false,
+    llm?: LLMProvider,
+  ): Promise<SearchResponse> {
     const alpha = this.config.retrievalScoreExponent;
+    const searchTrace: SearchTrace | undefined = trace
+      ? { totalWallMs: 0, totalTokens: 0, stages: {} }
+      : undefined;
+    const tTotal = trace ? performance.now() : 0;
 
     // Step 1: Similarity search in hot store
+    let t0 = trace ? performance.now() : 0;
     const candidates = await this.adapter.vectorSearch(queryEmbedding, {
       limit: topK * 3,
       includeSuperseded: deepRecall,
     });
+    if (trace && searchTrace) {
+      searchTrace.stages.vector_search = {
+        name: "vector_search",
+        wallMs: performance.now() - t0,
+        candidateCount: candidates.length,
+      };
+    }
+
+    // Step 1b: Lexical search (if hybrid enabled)
+    if (this.config.hybridSearch && queryText) {
+      const lexicalResults = await this.adapter.searchLexical(queryText, {
+        limit: this.config.kSparse,
+        includeSuperseded: deepRecall,
+      });
+      const seenIds = new Set(candidates.map((c) => (c as Memory).id));
+      for (const lexMem of lexicalResults) {
+        if (!seenIds.has(lexMem.id)) {
+          // Compute dense similarity for lexical-only candidates
+          const sim = lexMem.embedding.length > 0
+            ? cosineSimilarity(queryEmbedding, lexMem.embedding)
+            : 0.1;
+          candidates.push({
+            ...lexMem,
+            relevanceScore: sim,
+            finalScore: sim,
+          });
+          seenIds.add(lexMem.id);
+        }
+      }
+    }
 
     // Step 2: Score candidates
-    const scored: SearchResult[] = [];
+    t0 = trace ? performance.now() : 0;
+    let scored: SearchResult[] = [];
     for (const candidate of candidates) {
       const mem = candidate as Memory;
       const relevance = candidate.relevanceScore;
@@ -253,8 +405,77 @@ export class CognitiveEngine {
       });
     }
 
+    // Step 2b: Validity filtering
+    if (this.config.filterExpiredTransients) {
+      const filtered: SearchResult[] = [];
+      for (const r of scored) {
+        if (this.isExpired(r.memory, now)) {
+          if (deepRecall && this.config.includeExpiredInDeepRecall) {
+            r.combinedScore *= this.config.deepRecallPenalty;
+            r.viaDeepRecall = true;
+            filtered.push(r);
+          }
+          // else: exclude
+        } else {
+          filtered.push(r);
+        }
+      }
+      scored = filtered;
+    }
+
+    if (trace && searchTrace) {
+      searchTrace.stages.scoring = {
+        name: "scoring",
+        wallMs: performance.now() - t0,
+        candidateCount: scored.length,
+      };
+    }
+
     // Sort by combined score
     scored.sort((a, b) => b.combinedScore - a.combinedScore);
+
+    // Step 2c: LLM rerank (if enabled and LLM provided)
+    if (this.config.rerankEnabled && llm && queryText && scored.length > 1) {
+      t0 = trace ? performance.now() : 0;
+      const kRerank = Math.min(this.config.kRerank, scored.length);
+      const toRerank = scored.slice(0, kRerank);
+
+      const { rerankedIndices, usage } = await rerankCandidates(
+        queryText,
+        toRerank.map((r) => ({ content: r.memory.content })),
+        llm,
+        this.config,
+      );
+
+      // Rebuild scored array: reranked items first (in LLM order), then remainder
+      const reranked: SearchResult[] = [];
+      const usedIndices = new Set<number>();
+      for (const idx of rerankedIndices) {
+        if (idx < toRerank.length) {
+          reranked.push(toRerank[idx]);
+          usedIndices.add(idx);
+        }
+      }
+      // Append any that LLM omitted (considered irrelevant but keep them at lower priority)
+      for (let i = 0; i < toRerank.length; i++) {
+        if (!usedIndices.has(i)) reranked.push(toRerank[i]);
+      }
+      // Append remainder beyond kRerank
+      scored = [...reranked, ...scored.slice(kRerank)];
+
+      if (trace && searchTrace) {
+        const promptTokens = usage.promptTokens ?? 0;
+        const completionTokens = usage.completionTokens ?? 0;
+        searchTrace.stages.rerank = {
+          name: "rerank",
+          wallMs: performance.now() - t0,
+          candidateCount: kRerank,
+          promptTokens,
+          completionTokens,
+        };
+        searchTrace.totalTokens += promptTokens + completionTokens;
+      }
+    }
 
     // Take top-k direct results
     const directResults = scored.slice(0, topK);
@@ -285,6 +506,38 @@ export class CognitiveEngine {
           viaDeepRecall: false,
         });
       }
+    }
+
+    // Step 3b: Graph expansion (if configured)
+    if (this.config.graphExpansionHops > 0) {
+      const expanded = this.expandGraph(
+        directResults.map((r) => r.memory),
+        now, seenIds, this.config.graphExpansionHops,
+      );
+      for (const { memory: expMem, weight: expWeight } of expanded) {
+        const relevance = expMem.embedding.length > 0
+          ? cosineSimilarity(queryEmbedding, expMem.embedding)
+          : 0.1;
+        const retention = this.computeRetention(expMem, now);
+        const combined = relevance * retention ** alpha * expWeight;
+
+        associativeResults.push({
+          memory: expMem,
+          relevanceScore: relevance,
+          retentionScore: retention,
+          combinedScore: combined,
+          isAssociative: true,
+          viaDeepRecall: false,
+        });
+      }
+    }
+
+    // Bridge discovery
+    let evidenceChains: string[][] = [];
+    if (this.config.bridgeDiscovery) {
+      evidenceChains = this.findBridgePaths(
+        directResults.map((r) => r.memory), now,
+      );
     }
 
     // Step 4: Apply boosts
@@ -318,7 +571,21 @@ export class CognitiveEngine {
     // Combine and sort
     const allResults = [...directResults, ...associativeResults];
     allResults.sort((a, b) => b.combinedScore - a.combinedScore);
-    return allResults.slice(0, topK);
+
+    const final = allResults.slice(0, topK);
+    if (evidenceChains.length > 0 && final.length > 0) {
+      final[0].evidenceChains = evidenceChains;
+    }
+
+    if (trace && searchTrace) {
+      searchTrace.totalWallMs = performance.now() - tTotal;
+    }
+
+    return {
+      results: final,
+      evidenceChains,
+      trace: searchTrace,
+    };
   }
 
   // ------------------------------------------------------------------
