@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional, Literal
 
-from .types import Memory, MemoryCategory, CognitiveMemoryConfig, SearchResult
+from .types import Memory, MemoryCategory, CognitiveMemoryConfig, SearchResult, SearchResponse
 from .adapters.base import MemoryAdapter
 from .embeddings import EmbeddingProvider
 from .core import CognitiveMemory
@@ -98,13 +98,15 @@ class SyncCognitiveMemory:
         timestamp: Optional[datetime] = None,
         session_id: Optional[str] = None,
         deep_recall: bool = False,
-    ) -> list[SearchResult]:
+        trace: bool = False,
+    ) -> SearchResponse:
         return _run(self._async.search(
             query=query,
             top_k=top_k,
             timestamp=timestamp,
             session_id=session_id,
             deep_recall=deep_recall,
+            trace=trace,
         ))
 
     def tick(self, now: Optional[datetime] = None):
