@@ -708,6 +708,14 @@ export interface EmbeddingProvider {
 }
 
 /**
+ * Map a MemoryCategory to the deprecated MemoryType field.
+ * "core" has no MemoryType equivalent, so it maps to "semantic".
+ */
+export function categoryToMemoryType(category: MemoryCategory): MemoryType {
+  return category === "core" ? "semantic" : category;
+}
+
+/**
  * Create a default Memory object with all fields initialized
  */
 export function createDefaultMemory(
@@ -717,7 +725,7 @@ export function createDefaultMemory(
   const category = partial.category ?? "semantic";
   return {
     category,
-    memoryType: category === "core" ? "semantic" : (category as MemoryType),
+    memoryType: categoryToMemoryType(category),
     importance: 0.5,
     stability: 0.3,
     accessCount: 0,

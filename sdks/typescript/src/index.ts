@@ -35,6 +35,7 @@ export {
   HashEmbeddingProvider,
   OpenAIEmbeddingProvider,
   calculateRetention,
+  categoryToMemoryType,
   createDefaultMemory,
   getBaseDecayRate,
   getRetentionFloor,

@@ -10,7 +10,7 @@
  */
 
 import type { Memory, MemoryCategory, ResolvedCognitiveMemoryConfig, SemanticType } from "./types";
-import { createDefaultMemory } from "./types";
+import { createDefaultMemory, categoryToMemoryType } from "./types";
 
 // ---------------------------------------------------------------------------
 // LLM Provider interface
@@ -127,8 +127,32 @@ export type ConflictType = "CONTRADICTION" | "UPDATE" | "OVERLAP" | "NONE";
 // Extraction
 // ---------------------------------------------------------------------------
 
+type MemoryWithoutIds = Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">;
+
 const VALID_CATEGORIES = new Set<MemoryCategory>(["episodic", "semantic", "procedural", "core"]);
 const VALID_SEMANTIC_TYPES = new Set<SemanticType>(["fact", "preference", "plan", "transient_state", "other"]);
+
+function baseMemoryFields(
+  config: ResolvedCognitiveMemoryConfig,
+  sessionId: string,
+  now: number,
+): Omit<MemoryWithoutIds, "content" | "category" | "memoryType" | "importance" | "stability" | "semanticType" | "validFrom" | "validUntil" | "ttlSeconds" | "sourceTurnIds"> {
+  return {
+    userId: config.userId,
+    accessCount: 0,
+    lastAccessed: now,
+    retention: 1.0,
+    associations: {},
+    sessionIds: [sessionId],
+    isCold: false,
+    coldSince: null,
+    daysAtFloor: 0,
+    isSuperseded: false,
+    supersededBy: null,
+    isStub: false,
+    contradictedBy: null,
+  };
+}
 
 function parseOptionalTimestamp(value: unknown): number | null {
   if (value == null) return null;
@@ -145,7 +169,7 @@ export async function extractFromConversation(
   llm: LLMProvider,
   config: ResolvedCognitiveMemoryConfig,
   sessionId: string,
-): Promise<Array<Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">>> {
+): Promise<MemoryWithoutIds[]> {
   let prompt = EXTRACTION_PROMPT.replace("{conversation}", conversationText);
 
   if (config.customExtractionInstructions) {
@@ -183,9 +207,10 @@ function buildMemories(
   items: Array<Record<string, unknown>>,
   config: ResolvedCognitiveMemoryConfig,
   sessionId: string,
-): Array<Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">> {
+): MemoryWithoutIds[] {
   const now = Date.now();
-  const memories: Array<Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">> = [];
+  const base = baseMemoryFields(config, sessionId, now);
+  const memories: MemoryWithoutIds[] = [];
 
   for (const item of items) {
     if (typeof item !== "object" || item === null) continue;
@@ -199,17 +224,10 @@ function buildMemories(
     let importance = typeof item.importance === "number" ? item.importance : 0.5;
     importance = Math.max(0.0, Math.min(1.0, importance));
 
-    const stability = 0.1 + importance * 0.3;
-
-    // v6: Parse semantic type and validity
     const rawSemanticType = typeof item.memory_type === "string" ? item.memory_type : "other";
     const semanticType: SemanticType = VALID_SEMANTIC_TYPES.has(rawSemanticType as SemanticType)
       ? (rawSemanticType as SemanticType)
       : "other";
-
-    const validFrom = parseOptionalTimestamp(item.valid_from);
-    const validUntil = parseOptionalTimestamp(item.valid_until);
-    const ttlSeconds = typeof item.ttl_seconds === "number" ? Math.floor(item.ttl_seconds) : null;
 
     let sourceTurnIds: string[] = [];
     if (Array.isArray(item.source_turn_ids)) {
@@ -217,28 +235,16 @@ function buildMemories(
     }
 
     memories.push({
-      userId: config.userId,
+      ...base,
       content,
       category,
-      memoryType: category === "core" ? "semantic" : (category as any),
+      memoryType: categoryToMemoryType(category),
       importance,
-      stability,
-      accessCount: 0,
-      lastAccessed: now,
-      retention: 1.0,
-      associations: {},
-      sessionIds: [sessionId],
-      isCold: false,
-      coldSince: null,
-      daysAtFloor: 0,
-      isSuperseded: false,
-      supersededBy: null,
-      isStub: false,
-      contradictedBy: null,
+      stability: 0.1 + importance * 0.3,
       semanticType,
-      validFrom,
-      validUntil,
-      ttlSeconds,
+      validFrom: parseOptionalTimestamp(item.valid_from),
+      validUntil: parseOptionalTimestamp(item.valid_until),
+      ttlSeconds: typeof item.ttl_seconds === "number" ? Math.floor(item.ttl_seconds) : null,
       sourceTurnIds,
     });
   }
@@ -254,36 +260,24 @@ export function extractRawTurns(
   conversationText: string,
   config: ResolvedCognitiveMemoryConfig,
   sessionId: string,
-): Array<Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">> {
+): MemoryWithoutIds[] {
   const now = Date.now();
+  const base = baseMemoryFields(config, sessionId, now);
   const lines = conversationText.trim().split("\n");
-  const memories: Array<Omit<Memory, "id" | "createdAt" | "updatedAt" | "embedding">> = [];
+  const memories: MemoryWithoutIds[] = [];
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
-    // Skip header lines like "[This conversation took place on ...]"
     if (line.startsWith("[") && line.endsWith("]")) continue;
 
     memories.push({
-      userId: config.userId,
+      ...base,
       content: line,
-      category: "episodic" as MemoryCategory,
-      memoryType: "episodic" as any,
+      category: "episodic",
+      memoryType: "episodic",
       importance: 0.5,
       stability: 0.2,
-      accessCount: 0,
-      lastAccessed: now,
-      retention: 1.0,
-      associations: {},
-      sessionIds: [sessionId],
-      isCold: false,
-      coldSince: null,
-      daysAtFloor: 0,
-      isSuperseded: false,
-      supersededBy: null,
-      isStub: false,
-      contradictedBy: null,
       semanticType: "other",
       validFrom: null,
       validUntil: null,
@@ -390,9 +384,9 @@ export async function rerankCandidates(
     }
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) {
-      const indices = parsed
-        .filter((n): n is number => typeof n === "number" && n >= 0 && n < candidates.length)
-        .filter((n, i, arr) => arr.indexOf(n) === i); // dedup
+      const indices = [...new Set(
+        parsed.filter((n): n is number => typeof n === "number" && n >= 0 && n < candidates.length),
+      )];
       return { rerankedIndices: indices, usage };
     }
   } catch {

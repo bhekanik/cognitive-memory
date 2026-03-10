@@ -12,6 +12,12 @@ import { MemoryAdapter, type MemoryFilters } from "./base";
 
 type Db = Pick<PoolClient, "query">;
 
+interface PostgresScoreRow extends Record<string, unknown> {
+  relevance_score?: number;
+  text_score?: number;
+  link_strength?: number;
+}
+
 const VALID_CATEGORIES = new Set(["episodic", "semantic", "procedural", "core"]);
 
 function qident(value: string): string {
@@ -364,13 +370,10 @@ export class PostgresAdapter extends MemoryAdapter {
     );
 
     return res.rows
-      .map((r: Record<string, unknown>) => {
+      .map((r: PostgresScoreRow) => {
         const memory = this.rowToMemory(r);
         if (!memory) return null;
-        const relevanceScore =
-          typeof (r as any).relevance_score === "number"
-            ? ((r as any).relevance_score as number)
-            : 0;
+        const relevanceScore = typeof r.relevance_score === "number" ? r.relevance_score : 0;
         return {
           ...memory,
           relevanceScore,
@@ -451,13 +454,10 @@ export class PostgresAdapter extends MemoryAdapter {
     );
 
     return res.rows
-      .map((r: Record<string, unknown>) => {
+      .map((r: PostgresScoreRow) => {
         const memory = this.rowToMemory(r);
         if (!memory) return null;
-        const linkStrength =
-          typeof (r as any).link_strength === "number"
-            ? ((r as any).link_strength as number)
-            : 0;
+        const linkStrength = typeof r.link_strength === "number" ? r.link_strength : 0;
         return { ...memory, linkStrength };
       })
       .filter(Boolean) as Array<Memory & { linkStrength: number }>;
@@ -539,13 +539,10 @@ export class PostgresAdapter extends MemoryAdapter {
     );
 
     return res.rows
-      .map((r: Record<string, unknown>) => {
+      .map((r: PostgresScoreRow) => {
         const memory = this.rowToMemory(r);
         if (!memory) return null;
-        const relevanceScore =
-          typeof (r as any).text_score === "number"
-            ? ((r as any).text_score as number)
-            : 0;
+        const relevanceScore = typeof r.text_score === "number" ? r.text_score : 0;
         return {
           ...memory,
           relevanceScore,

@@ -24,6 +24,7 @@ export {
   DEFAULT_CONFIG,
   resolveConfig,
   createDefaultMemory,
+  categoryToMemoryType,
   getRetentionFloor,
   getBaseDecayRate,
 } from "./types";
