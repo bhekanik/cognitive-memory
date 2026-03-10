@@ -175,8 +175,8 @@ const mem = new CognitiveMemory({
     defaultStability: 0.3,
     minRetention: 0.2,
     decayRates: {
-      episodic: 30,    // days
-      semantic: 90,    // days
+      episodic: 45,    // days (default)
+      semantic: 120,   // days (default)
       procedural: Infinity,
     },
   },

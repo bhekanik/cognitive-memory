@@ -209,7 +209,6 @@ function buildMemories(
   sessionId: string,
 ): MemoryWithoutIds[] {
   const now = Date.now();
-  const base = baseMemoryFields(config, sessionId, now);
   const memories: MemoryWithoutIds[] = [];
 
   for (const item of items) {
@@ -235,7 +234,7 @@ function buildMemories(
     }
 
     memories.push({
-      ...base,
+      ...baseMemoryFields(config, sessionId, now),
       content,
       category,
       memoryType: categoryToMemoryType(category),
@@ -262,7 +261,6 @@ export function extractRawTurns(
   sessionId: string,
 ): MemoryWithoutIds[] {
   const now = Date.now();
-  const base = baseMemoryFields(config, sessionId, now);
   const lines = conversationText.trim().split("\n");
   const memories: MemoryWithoutIds[] = [];
 
@@ -272,7 +270,7 @@ export function extractRawTurns(
     if (line.startsWith("[") && line.endsWith("]")) continue;
 
     memories.push({
-      ...base,
+      ...baseMemoryFields(config, sessionId, now),
       content: line,
       category: "episodic",
       memoryType: "episodic",
@@ -385,7 +383,10 @@ export async function rerankCandidates(
     const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed)) {
       const indices = [...new Set(
-        parsed.filter((n): n is number => typeof n === "number" && n >= 0 && n < candidates.length),
+        parsed.filter(
+          (n): n is number =>
+            Number.isInteger(n) && n >= 0 && n < candidates.length,
+        ),
       )];
       return { rerankedIndices: indices, usage };
     }

@@ -29,12 +29,12 @@ npm install cognitive-memory
 ### Python
 
 ```python
-from cognitive_memory import SyncCognitiveMemory
+from cognitive_memory import SyncCognitiveMemory, MemoryCategory
 
 mem = SyncCognitiveMemory(embedder="hash")
 
 # Store a memory
-mem.add("User prefers dark mode and compact layouts", category="semantic", importance=0.7)
+mem.add("User prefers dark mode and compact layouts", category=MemoryCategory.SEMANTIC, importance=0.7)
 
 # Search memories
 response = mem.search("What are the user's UI preferences?")
