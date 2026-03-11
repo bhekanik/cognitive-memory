@@ -28,7 +28,7 @@ import type {
   SemanticType,
   StageTrace,
 } from "./types";
-import { getRetentionFloor, categoryToMemoryType } from "./types";
+import { getRetentionFloor } from "./types";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const EXPIRABLE_TYPES: Set<string> = new Set(["plan", "transient_state"]);
@@ -135,7 +135,6 @@ export class CognitiveEngine {
       memory.sessionIds.length >= this.config.coreSessionThreshold
     ) {
       memory.category = "core";
-      memory.memoryType = "semantic"; // core maps to semantic for backward compat
       return true;
     }
     return false;
@@ -542,8 +541,10 @@ export class CognitiveEngine {
     }
 
     // Step 4: Apply boosts
+    const modifiedIds = new Set<string>();
     for (const result of directResults) {
       this.applyDirectBoost(result.memory, now, sessionId);
+      modifiedIds.add(result.memory.id);
       if (result.memory.isCold) {
         await this.adapter.migrateToHot(result.memory.id);
       }
@@ -551,6 +552,7 @@ export class CognitiveEngine {
 
     for (const result of associativeResults) {
       this.applyAssociativeBoost(result.memory, now, sessionId);
+      modifiedIds.add(result.memory.id);
       if (result.memory.isCold) {
         await this.adapter.migrateToHot(result.memory.id);
       }
@@ -567,6 +569,20 @@ export class CognitiveEngine {
       for (let j = i + 1; j < directMems.length; j++) {
         this.strengthenAssociation(directMems[i], directMems[j], now);
       }
+    }
+
+    // Persist all boost/promotion/association mutations
+    const allModified = [...directResults, ...associativeResults]
+      .filter((r) => modifiedIds.has(r.memory.id));
+    for (const r of allModified) {
+      await this.adapter.updateMemory(r.memory.id, {
+        stability: r.memory.stability,
+        accessCount: r.memory.accessCount,
+        lastAccessed: r.memory.lastAccessed,
+        sessionIds: r.memory.sessionIds,
+        category: r.memory.category,
+        associations: r.memory.associations,
+      });
     }
 
     // Combine and sort
@@ -613,6 +629,9 @@ export class CognitiveEngine {
       } else {
         mem.daysAtFloor = 0;
       }
+
+      // Persist daysAtFloor counter
+      await this.adapter.updateMemory(mem.id, { daysAtFloor: mem.daysAtFloor });
 
       if (mem.daysAtFloor >= thresholdDays) {
         await this.adapter.migrateToCold(mem.id, now);
@@ -693,7 +712,6 @@ export class CognitiveEngine {
           content: summaryText,
           embedding: summaryEmbedding,
           category,
-          memoryType: categoryToMemoryType(category),
           importance: Math.max(...group.map((m) => m.importance)),
           stability:
             group.reduce((sum, m) => sum + m.stability, 0) / group.length,

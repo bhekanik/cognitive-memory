@@ -583,14 +583,16 @@ class CognitiveEngine:
             )
 
         # Step 4: Apply boosts
+        modified: list[Memory] = []
         for result in direct_results:
             self.apply_direct_boost(result.memory, now, session_id)
-            # If it was cold and got retrieved, migrate back to hot
+            modified.append(result.memory)
             if result.memory.is_cold:
                 await self.adapter.migrate_to_hot(result.memory.id)
 
         for result in associative_results:
             self.apply_associative_boost(result.memory, now, session_id)
+            modified.append(result.memory)
             if result.memory.is_cold:
                 await self.adapter.migrate_to_hot(result.memory.id)
 
@@ -602,6 +604,10 @@ class CognitiveEngine:
         all_direct_mems = [r.memory for r in direct_results]
         for mem_a, mem_b in combinations(all_direct_mems, 2):
             self.strengthen_association(mem_a, mem_b, now)
+
+        # Persist all boost/promotion/association mutations
+        if modified:
+            await self.adapter.batch_update(modified)
 
         # Combine and sort
         all_results = direct_results + associative_results
@@ -633,12 +639,12 @@ class CognitiveEngine:
         Core memories are exempt.
         """
         threshold_days = self.config.cold_migration_days
+        updated: list[Memory] = []
 
         for mem in await self.adapter.all_hot():
             if mem.category == MemoryCategory.CORE:
                 continue
             if mem.is_superseded:
-                # superseded originals go to cold immediately
                 await self.adapter.migrate_to_cold(mem.id, now)
                 continue
 
@@ -650,8 +656,13 @@ class CognitiveEngine:
             else:
                 mem.days_at_floor = 0
 
+            updated.append(mem)
+
             if mem.days_at_floor >= threshold_days:
                 await self.adapter.migrate_to_cold(mem.id, now)
+
+        if updated:
+            await self.adapter.batch_update(updated)
 
     async def run_cold_ttl_expiry(self, now: datetime):
         """
@@ -767,6 +778,9 @@ class CognitiveEngine:
                         target_id=m.id, weight=0.8, created_at=now,
                         last_co_retrieval=now,
                     )
+
+                # Persist summary associations added after create()
+                await self.adapter.update(summary)
 
     # ------------------------------------------------------------------
     # Maintenance tick

@@ -10,7 +10,7 @@ All public methods are async. For sync usage, use SyncCognitiveMemory.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from itertools import combinations
 from typing import Optional, Literal
 
@@ -75,7 +75,6 @@ class CognitiveMemory:
         self._engine = CognitiveEngine(self._adapter, self.config)
         self._extractor = MemoryExtractor(self.config)
 
-        # Resolve embedder
         if embedder is None or embedder == "openai":
             self._embedder = OpenAIEmbeddings(
                 model=self.config.embedding_model,
@@ -120,7 +119,6 @@ class CognitiveMemory:
         if session_id:
             mem.session_ids.add(session_id)
 
-        # Check for conflicts with existing memories
         await self._check_conflicts(mem, now)
 
         await self._adapter.create(mem)
@@ -156,29 +154,46 @@ class CognitiveMemory:
         if mode not in ("raw", "semantic", "hybrid"):
             raise ValueError(f"Invalid extraction_mode: {mode!r}. Must be 'raw', 'semantic', or 'hybrid'.")
 
+        import time as _time
         now = timestamp or datetime.now()
         stored: list[Memory] = []
 
         # --- Semantic extraction (modes: semantic, hybrid) ---
         if mode in ("semantic", "hybrid"):
+            logger.info(f"[ingest:{session_id}] Starting LLM extraction")
+            _t0 = _time.time()
             memories = self._extractor.extract_from_conversation(
                 conversation_text, session_id, now,
             )
+            logger.info(f"[ingest:{session_id}] Extracted {len(memories)} memories in {_time.time()-_t0:.1f}s")
             if memories:
+                _t0 = _time.time()
                 contents = [m.content for m in memories]
                 embeddings = self._embedder.embed_batch(contents)
+                logger.info(f"[ingest:{session_id}] Embedded {len(contents)} memories in {_time.time()-_t0:.1f}s")
                 for mem, emb in zip(memories, embeddings):
                     mem.embedding = emb
 
-                for mem in memories:
+                _hot_count = len(await self._adapter.all_hot())
+                logger.info(f"[ingest:{session_id}] Conflict detection: {len(memories)} new × {_hot_count} hot memories")
+                for _mi, mem in enumerate(memories):
+                    _t0 = _time.time()
                     await self._check_conflicts(mem, now)
+                    _conflict_ms = (_time.time()-_t0)*1000
+                    if _conflict_ms > 1000:
+                        logger.warning(f"[ingest:{session_id}] conflict check {_mi+1}/{len(memories)} took {_conflict_ms:.0f}ms (SLOW)")
                     if mem.embedding is not None:
                         similar = await self._adapter.search_similar(mem.embedding, top_k=3)
+                        reinforced = []
                         for existing_mem, sim in similar:
                             if sim > STABILITY_REINFORCEMENT_THRESHOLD and existing_mem.id != mem.id:
                                 existing_mem.stability = min(1.0, existing_mem.stability + 0.05)
+                                reinforced.append(existing_mem)
+                        if reinforced:
+                            await self._adapter.batch_update(reinforced)
                     await self._adapter.create(mem)
                     stored.append(mem)
+                logger.info(f"[ingest:{session_id}] Stored {len(stored)} memories, hot total now: {len(await self._adapter.all_hot())}")
 
         # --- Raw turn storage (modes: raw, hybrid) ---
         if mode in ("raw", "hybrid"):
@@ -197,13 +212,15 @@ class CognitiveMemory:
             return []
 
         # Synaptic tagging: link co-ingested memories gated by similarity
-        for mem_a, mem_b in combinations(stored, 2):
-            if mem_a.embedding is None or mem_b.embedding is None:
-                continue
-            sim = cosine_similarity(mem_a.embedding, mem_b.embedding)
-            if sim >= INGESTION_ASSOCIATION_THRESHOLD:
-                weight = min(0.5, INGESTION_ASSOCIATION_BASE_WEIGHT + (sim - INGESTION_ASSOCIATION_THRESHOLD) * 0.5)
-                _ensure_bidirectional_association(mem_a, mem_b, weight, now)
+        if len(stored) > 1:
+            for mem_a, mem_b in combinations(stored, 2):
+                if mem_a.embedding is None or mem_b.embedding is None:
+                    continue
+                sim = cosine_similarity(mem_a.embedding, mem_b.embedding)
+                if sim >= INGESTION_ASSOCIATION_THRESHOLD:
+                    weight = min(0.5, INGESTION_ASSOCIATION_BASE_WEIGHT + (sim - INGESTION_ASSOCIATION_THRESHOLD) * 0.5)
+                    _ensure_bidirectional_association(mem_a, mem_b, weight, now)
+            await self._adapter.batch_update(stored)
 
         # Periodic maintenance (skip during batch benchmarks)
         if run_tick and self.config.run_maintenance_during_ingestion:
@@ -260,7 +277,7 @@ class CognitiveMemory:
         Check if new memory conflicts with existing memories.
         On contradiction/update: demote the old memory.
         """
-        # Only check against high-importance or core memories for efficiency
+        import time as _time
         all_hot = await self._adapter.all_hot()
         candidates = [
             m for m in all_hot
@@ -271,29 +288,42 @@ class CognitiveMemory:
         if not candidates or new_memory.embedding is None:
             return
 
-        # Find semantically similar existing memories
+        _llm_calls = 0
+        _sim_checks = 0
+        demoted: list[Memory] = []
         for existing in candidates:
             if existing.embedding is None:
                 continue
             sim = cosine_similarity(new_memory.embedding, existing.embedding)
+            _sim_checks += 1
             if sim < CONFLICT_SIMILARITY_THRESHOLD:
                 continue
 
+            _llm_calls += 1
+            _t0 = _time.time()
             conflict_type = self._extractor.detect_conflict(new_memory, existing)
+            logger.debug(f"[conflict] detect_conflict call {_llm_calls} took {(_time.time()-_t0)*1000:.0f}ms (sim={sim:.3f})")
 
             if conflict_type in ("CONTRADICTION", "UPDATE"):
                 logger.info(
                     f"Conflict detected ({conflict_type}): "
                     f"'{existing.content[:50]}' -> '{new_memory.content[:50]}'"
                 )
-                # Demote the old memory
-                if existing.category == MemoryCategory.CORE:
+                # Capture category before demotion
+                was_core = existing.category == MemoryCategory.CORE
+                if was_core:
                     existing.category = MemoryCategory.SEMANTIC
                 existing.contradicted_by = new_memory.id
-                # New memory inherits importance
                 new_memory.importance = max(new_memory.importance, existing.importance)
-                if conflict_type == "CONTRADICTION" and existing.category == MemoryCategory.CORE:
+                if conflict_type == "CONTRADICTION" and was_core:
                     new_memory.category = MemoryCategory.CORE
+                demoted.append(existing)
+
+        if demoted:
+            await self._adapter.batch_update(demoted)
+
+        if _llm_calls > 0:
+            logger.info(f"[conflict] {_sim_checks} sim checks, {_llm_calls} LLM calls for '{new_memory.content[:40]}...'")
 
     # ------------------------------------------------------------------
     # Maintenance
