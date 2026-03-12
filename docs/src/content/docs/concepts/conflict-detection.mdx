@@ -81,14 +81,15 @@ When a conflict is confirmed by the LLM:
 
 ```python
 if conflict_type in ("CONTRADICTION", "UPDATE"):
+    was_core = existing.category == MemoryCategory.CORE
     # Demote old
-    if existing.category == MemoryCategory.CORE:
+    if was_core:
         existing.category = MemoryCategory.SEMANTIC
     existing.contradicted_by = new_memory.id
 
     # Boost new
     new_memory.importance = max(new_memory.importance, existing.importance)
-    if conflict_type == "CONTRADICTION" and existing.category == MemoryCategory.CORE:
+    if conflict_type == "CONTRADICTION" and was_core:
         new_memory.category = MemoryCategory.CORE
 ```
 
@@ -144,4 +145,4 @@ Conflicts are resolved during `tick()`, not during ingestion. This means there's
 
 - For real-time applications with `run_maintenance_during_ingestion=True`, tick runs every 5 ingestions.
 - For batch imports, call `tick()` after ingestion completes.
-- The new memory already has a higher timestamp and will rank higher in recency-weighted search even before formal resolution.
+- If the new memory has a later timestamp (typical for in-order ingestion), it will usually rank higher in recency-weighted search even before formal resolution. For backfills or out-of-order imports, this may not hold.

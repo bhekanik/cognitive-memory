@@ -9,7 +9,7 @@ The ingestion pipeline converts raw conversation text into structured, embedded,
 
 1. LLM extraction (narrator prompt)
 2. Embedding
-3. Conflict detection
+3. Conflict tagging
 4. Ingestion-time similarity boost
 5. Synaptic tagging (association creation)
 
@@ -66,9 +66,9 @@ Batch embedding is more efficient than individual calls. The default embedder us
 
 ## Stage 3: Conflict tagging
 
-Each new memory's embedding is compared against the top-5 most similar existing memories. Pairs with cosine similarity >= 0.85 are tagged as potential conflicts and queued for deferred LLM resolution during the next `tick()`.
+Each new memory's embedding is compared against the top-5 most similar existing memories. Pairs with cosine similarity > 0.85 are tagged as potential conflicts and queued for deferred LLM resolution during the next `tick()`.
 
-No LLM calls happen at this stage — only cosine similarity checks that piggyback on the same `search_similar` call used for stability reinforcement. This keeps ingestion fast regardless of how many memories exist.
+No LLM calls happen at this stage. A single `search_similar(top_k=5)` call is made per memory, and its results are used for both conflict tagging (pairs above 0.85) and stability reinforcement in Stage 4 (pairs above 0.75). This keeps ingestion fast regardless of how many memories exist.
 
 Memories from the same session root (e.g., dual-perspective ingestion of the same conversation) are skipped to avoid false conflict pairs.
 

@@ -106,7 +106,7 @@ mem = CognitiveMemory(config=config)
 for conv in conversations:
     await mem.extract_and_store(conv, session_id=..., run_tick=False)
 
-# Run maintenance once at the end — resolves queued conflicts, runs cold migration
+# Run maintenance once at the end — resolves queued conflicts, cold migration, TTL expiry, consolidation
 await mem.tick()
 ```
 
