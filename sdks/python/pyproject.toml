@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cognitive-memory"
-version = "0.3.0"
+version = "0.4.0"
 description = "Biologically-inspired agent memory with decay, consolidation, and tiered storage"
 readme = "README.md"
 license = "MIT"
