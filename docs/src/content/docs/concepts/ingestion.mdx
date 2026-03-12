@@ -9,7 +9,7 @@ The ingestion pipeline converts raw conversation text into structured, embedded,
 
 1. LLM extraction (narrator prompt)
 2. Embedding
-3. Conflict detection
+3. Conflict tagging
 4. Ingestion-time similarity boost
 5. Synaptic tagging (association creation)
 
@@ -64,11 +64,15 @@ for mem, emb in zip(memories, embeddings):
 
 Batch embedding is more efficient than individual calls. The default embedder uses OpenAI's `text-embedding-3-small` with 1536 dimensions.
 
-## Stage 3: Conflict detection
+## Stage 3: Conflict tagging
 
-Each new memory is checked against existing high-importance and core memories for contradictions or updates. See [Conflict detection](/concepts/conflict-detection/) for the full mechanism.
+Each new memory's embedding is compared against the top-5 most similar existing memories. Pairs with cosine similarity > 0.85 are tagged as potential conflicts and queued for deferred LLM resolution during the next `tick()`.
 
-This step involves LLM calls, so it only checks pairs with cosine similarity >= 0.6.
+No LLM calls happen at this stage. A single `search_similar(top_k=5)` call is made per memory, and its results are used for both conflict tagging (pairs above 0.85) and stability reinforcement in Stage 4 (pairs above 0.75). This keeps ingestion fast regardless of how many memories exist.
+
+Memories from the same session root (e.g., dual-perspective ingestion of the same conversation) are skipped to avoid false conflict pairs.
+
+See [Conflict detection](/concepts/conflict-detection/) for the full two-phase resolution mechanism.
 
 ## Stage 4: Ingestion-time similarity boost
 

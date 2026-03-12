@@ -106,11 +106,11 @@ mem = CognitiveMemory(config=config)
 for conv in conversations:
     await mem.extract_and_store(conv, session_id=..., run_tick=False)
 
-# Run maintenance once at the end
+# Run maintenance once at the end — resolves queued conflicts, cold migration, TTL expiry, consolidation
 await mem.tick()
 ```
 
-Disabling maintenance during ingestion avoids O(n) cold-migration checks after every batch.
+Disabling maintenance during ingestion avoids cold-migration checks and conflict resolution LLM calls after every batch. Conflict candidates are still tagged during ingestion (zero-cost cosine checks) and resolved in bulk when you call `tick()` at the end.
 
 ---
 

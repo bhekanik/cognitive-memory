@@ -80,7 +80,7 @@ Conversation text
   Memory objects with category + importance
       |
       v
-  Embedding + conflict detection
+  Embedding + conflict tagging (cosine only, no LLM)
       |
       v
   Synaptic tagging (ingestion-time associations)
@@ -109,6 +109,6 @@ Conversation text
   Sorted results returned
 ```
 
-Periodic maintenance (`tick()`) handles cold migration, TTL expiry, and consolidation in the background.
+Periodic maintenance (`tick()`) handles conflict resolution, cold migration, TTL expiry, and consolidation in the background.
 
 See [Scoring pipeline](/concepts/scoring-pipeline/) for the complete retrieval flow, and [Ingestion](/concepts/ingestion/) for the extraction pipeline.

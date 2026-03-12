@@ -7,13 +7,55 @@ description: How the system detects and resolves contradictions between new and 
 
 Facts change. A user moves cities, changes jobs, starts a new relationship. The memory system needs to detect when new information contradicts or updates existing memories, and handle the transition gracefully.
 
-## How conflict detection works
+## Two-phase conflict resolution
 
-When a new memory is stored, the system checks it against existing high-importance and core memories:
+Conflict detection uses a **deferred resolution** approach to keep ingestion fast while still catching real contradictions:
 
-1. **Filter candidates:** Only check against non-superseded memories with importance > 0.5 or core category (for efficiency).
-2. **Similarity gate:** Compute cosine similarity between the new memory and each candidate. Only check pairs with similarity >= 0.6 (topically related).
-3. **LLM classification:** Ask the LLM to classify the relationship between the two memories.
+1. **Phase 1 (at ingestion):** Tag candidate conflict pairs using cosine similarity only. No LLM calls. Fast.
+2. **Phase 2 (at tick):** Resolve queued candidates with LLM classification. Bounded to 50 per tick.
+
+This design avoids the O(N^2) LLM call problem that occurs when checking every new memory against every existing memory inline during ingestion.
+
+### Phase 1: Tagging at ingestion
+
+When a new memory is embedded and stored, the system piggybacks on the existing `search_similar` call (also used for stability reinforcement) to identify potential conflicts:
+
+```python
+similar = await self._adapter.search_similar(mem.embedding, top_k=5)
+for existing_mem, sim in similar:
+    if sim > 0.85:  # high similarity gate
+        self._conflict_queue.append((mem.id, existing_mem.id, sim))
+```
+
+Key details:
+- **Similarity threshold: 0.85.** Only near-duplicate or directly contradictory memories pass this gate. At 0.6, topically related but non-conflicting memories flood the queue.
+- **Same-session-root skip.** Memories from different perspectives of the same session (e.g., dual-perspective ingestion) share a session root and are skipped. "Caroline went hiking" and "Melanie went hiking with Caroline" are the same event from two angles, not a conflict.
+- **Zero LLM calls.** Tagging uses only cosine similarity, which is already computed for stability reinforcement.
+
+### Phase 2: Resolution at tick
+
+During `tick()`, the system processes the conflict queue:
+
+```python
+async def _resolve_conflict_queue(self, now, max_per_tick=50):
+    self._conflict_queue.sort(key=lambda x: x[2], reverse=True)  # highest sim first
+
+    for new_id, existing_id, sim in self._conflict_queue[:max_per_tick]:
+        new_mem = await self._adapter.get(new_id)
+        existing_mem = await self._adapter.get(existing_id)
+
+        # Skip if either was already resolved
+        if new_mem.is_superseded or existing_mem.is_superseded:
+            continue
+
+        conflict_type = self._extractor.detect_conflict(new_mem, existing_mem)
+        # ... resolve if CONTRADICTION or UPDATE
+```
+
+Key details:
+- **Bounded per tick.** At most 50 candidates are processed per tick, preventing API call spikes.
+- **Priority order.** Highest-similarity pairs are resolved first (most likely to be real conflicts).
+- **Stale candidate pruning.** If either memory was already superseded or deleted since tagging, the pair is skipped.
 
 ## Conflict types
 
@@ -30,7 +72,7 @@ The LLM classifies each pair into one of four categories:
 
 ### CONTRADICTION or UPDATE
 
-When a conflict is detected:
+When a conflict is confirmed by the LLM:
 
 1. **Old memory is demoted:** If the old memory was core, it's downgraded to semantic (losing its 0.60 floor).
 2. **Old memory is marked:** `contradicted_by` is set to the new memory's ID.
@@ -39,14 +81,15 @@ When a conflict is detected:
 
 ```python
 if conflict_type in ("CONTRADICTION", "UPDATE"):
+    was_core = existing.category == MemoryCategory.CORE
     # Demote old
-    if existing.category == MemoryCategory.CORE:
+    if was_core:
         existing.category = MemoryCategory.SEMANTIC
     existing.contradicted_by = new_memory.id
 
     # Boost new
     new_memory.importance = max(new_memory.importance, existing.importance)
-    if conflict_type == "CONTRADICTION" and existing.category == MemoryCategory.CORE:
+    if conflict_type == "CONTRADICTION" and was_core:
         new_memory.category = MemoryCategory.CORE
 ```
 
@@ -69,23 +112,37 @@ Respond with exactly one word: CONTRADICTION, UPDATE, OVERLAP, or NONE.
 - NONE: they are unrelated
 ```
 
-## Performance considerations
+## Performance characteristics
 
-Conflict detection is computationally expensive because it involves LLM calls. The system optimizes by:
+The deferred approach has significantly better scaling behavior than inline conflict detection:
 
-1. **Only checking high-importance candidates** (importance > 0.5 or core). Low-importance memories aren't worth the LLM call.
-2. **Similarity gate at 0.6.** Only pairs that are semantically related are checked. This filters out the vast majority of comparisons.
-3. **Skipping superseded and stub memories.** Already-resolved conflicts aren't re-checked.
+| Approach | LLM calls at ingestion | Scaling |
+|----------|:----------------------:|---------|
+| Inline (old) | O(new_memories x existing_memories) | Quadratic growth per session |
+| Deferred (current) | 0 | Constant (zero) at ingestion |
 
-For a typical system with 100 hot memories, a new memory might trigger 2-5 LLM calls (the high-similarity pairs from the filtered candidates). This is manageable within a normal ingestion flow.
+LLM calls are bounded at tick time: at most `max_per_tick` (default 50) per maintenance cycle. The queue drains over multiple ticks.
+
+Additional optimizations:
+1. **High similarity gate (0.85).** Only near-duplicates are queued. At this threshold, a 19-session conversation with ~500 memories produces roughly 15-30 conflict candidates instead of 1400+.
+2. **Same-session-root skip.** Dual-perspective ingestion (same conversation from two speakers) doesn't generate false conflict pairs.
+3. **Stale candidate pruning.** Already-resolved memories are skipped without an LLM call.
 
 ## Example flow
 
 1. Memory store contains: "User lives in Portland" (core, importance=0.9)
 2. New memory arrives: "User just moved to Seattle"
-3. Cosine similarity between embeddings: 0.78 (> 0.6 threshold)
-4. LLM call: classifies as "UPDATE"
+3. At ingestion: cosine similarity = 0.91 (> 0.85). Pair is queued.
+4. At next `tick()`: LLM classifies as "UPDATE"
 5. Resolution:
    - "User lives in Portland" demoted from core to semantic, marked as contradicted
    - "User just moved to Seattle" inherits importance 0.9
 6. Future searches will surface the Seattle memory; the Portland memory will gradually decay without the core floor protecting it.
+
+## When conflicts are resolved
+
+Conflicts are resolved during `tick()`, not during ingestion. This means there's a brief window where both the old and new memory coexist without resolution. In practice this is fine:
+
+- For real-time applications with `run_maintenance_during_ingestion=True`, tick runs every 5 ingestions.
+- For batch imports, call `tick()` after ingestion completes.
+- If the new memory has a later timestamp (typical for in-order ingestion), it will usually rank higher in recency-weighted search even before formal resolution. For backfills or out-of-order imports, this may not hold.
