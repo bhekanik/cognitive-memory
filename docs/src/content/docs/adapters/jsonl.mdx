@@ -9,31 +9,42 @@ The JSONL adapter writes every operation as a JSON line to a local file. It's de
 
 ## Installation
 
-The JSONL adapter is included in the TypeScript SDK — no extra dependencies.
+The JSONL adapter is included in both SDKs — no extra dependencies.
 
-```typescript
-import { CognitiveMemory } from "cognitive-memory";
-import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
-```
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Usage
 
-```typescript
-import { CognitiveMemory } from "cognitive-memory";
-import { JsonlAdapter } from "cognitive-memory/adapters/jsonl";
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import CognitiveMemory
+    from cognitive_memory.adapters.jsonl import JsonlFileAdapter
 
-const adapter = new JsonlAdapter({
-    filePath: "./memories.jsonl",
-});
+    adapter = JsonlFileAdapter("./memories.jsonl")
+    mem = CognitiveMemory(adapter=adapter)
+    await mem.add("User likes coffee", category="semantic")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { CognitiveMemory } from "cognitive-memory";
+    import { JsonlFileAdapter } from "cognitive-memory/adapters/jsonl";
 
-const mem = new CognitiveMemory({
-    adapter,
-    embeddingProvider: myEmbedder,
-    userId: "user-123",
-});
+    const adapter = new JsonlFileAdapter({
+        path: "./memories.jsonl",
+    });
 
-await mem.store({ content: "User likes coffee", category: "semantic" });
-```
+    const mem = new CognitiveMemory({
+        adapter,
+        embeddingProvider: myEmbedder,
+        userId: "user-123",
+    });
+
+    await mem.store({ content: "User likes coffee", category: "semantic" });
+    ```
+  </TabItem>
+</Tabs>
 
 ## File format
 
@@ -85,10 +96,10 @@ The append-only nature means you have a complete history of every memory operati
 
 ```typescript
 // Write memories during development
-const adapter = new JsonlAdapter({ filePath: "./test-fixtures/conversation-1.jsonl" });
+const adapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
 
 // Later, load them in tests
-const testAdapter = new JsonlAdapter({ filePath: "./test-fixtures/conversation-1.jsonl" });
+const testAdapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
 ```
 
 ## Limitations

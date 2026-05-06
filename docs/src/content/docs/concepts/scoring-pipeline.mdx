@@ -55,7 +55,7 @@ For superseded memories in deep recall mode, an additional penalty is applied:
 combined_score *= deep_recall_penalty  # default: 0.5
 ```
 
-Candidates are sorted by combined score, and the top-k are selected as direct results.
+Candidates are sorted by combined score. If reranking is disabled, the requested top-k become the direct results. If reranking is enabled, the expanded pool continues to the rerank stage first.
 
 ### Stage 2b: Validity filtering (v6)
 
@@ -83,7 +83,7 @@ This stage can pull in memories from cold storage — if a cold memory is linked
 
 ### Stage 3b: Graph expansion + bridge discovery (v6)
 
-After associative expansion, the engine performs a second hop through the association graph looking for **bridge memories** — nodes that connect otherwise unrelated clusters. Bridge memories are scored and included if they exceed a minimum relevance threshold, enabling cross-topic recall.
+After associative expansion, the engine can perform a second hop through the association graph looking for **bridge memories** — nodes that connect otherwise unrelated clusters. Bridge memories are scored and included if they exceed a minimum relevance threshold, enabling cross-topic recall.
 
 ### Stage 4: Retrieval boosting
 
@@ -220,13 +220,13 @@ Query text
 Embed query
     |
     v
-Stage 1:  Vector search (hot store, top_k * 3)
+Stage 1:  Vector search (normal: hot only; deep recall: cold + superseded too)
 Stage 1b: BM25 lexical search (if hybrid enabled)
     |
     v
-Stage 2:  Score by sim * R^alpha (sort, take top_k)
+Stage 2:  Score by sim * R^alpha
 Stage 2b: Validity filtering (expired plan/transient exclusion)
-Stage 2c: LLM reranking (if rerank_enabled)
+Stage 2c: LLM reranking (if enabled; top_k * rerank_factor candidates -> top_k)
     |
     v
 Stage 3:  Expand via associations (cold store too)

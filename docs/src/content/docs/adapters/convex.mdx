@@ -27,8 +27,7 @@ npx convex dev
 ### 2. Configure the adapter
 
 ```typescript
-import { CognitiveMemory } from "cognitive-memory";
-import { ConvexAdapter } from "cognitive-memory";
+import { CognitiveMemory, ConvexAdapter } from "cognitive-memory";
 import { ConvexClient } from "convex/browser";
 
 const convex = new ConvexClient(process.env.CONVEX_URL!);
@@ -84,6 +83,13 @@ export default defineSchema({
         lastAccessed: v.int64(),
         retention: v.float64(),
         metadata: v.optional(v.any()),
+        isCold: v.optional(v.boolean()),
+        coldSince: v.optional(v.number()),
+        isStub: v.optional(v.boolean()),
+        isSuperseded: v.optional(v.boolean()),
+        supersededBy: v.optional(v.string()),
+        sessionIds: v.optional(v.array(v.string())),
+        source: v.optional(v.string()),
     })
     .index("by_user", ["userId"])
     .index("by_user_retention", ["userId", "retention"])
@@ -112,7 +118,14 @@ Convex provides built-in vector search with automatic indexing. No pgvector setu
 ```typescript
 // In your Convex function
 export const search = query({
-    args: { embedding: v.array(v.float64()), userId: v.string(), limit: v.number() },
+    args: {
+        embedding: v.array(v.float64()),
+        userId: v.string(),
+        limit: v.number(),
+        includeCold: v.optional(v.boolean()),
+        includeStubs: v.optional(v.boolean()),
+        includeSuperseded: v.optional(v.boolean()),
+    },
     handler: async (ctx, args) => {
         return await ctx.db
             .query("memories")

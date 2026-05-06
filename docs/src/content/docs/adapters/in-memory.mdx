@@ -116,4 +116,4 @@ The InMemory adapter supports `search_lexical` / `searchLexical` via a built-in 
 | Migrate hot/cold | O(1) | Dict move |
 | Clear | O(1) | Dict clear |
 
-The adapter is fast enough for most use cases. If you're hitting performance limits with in-memory storage, you should be using Postgres or Redis anyway.
+The adapter is fast enough for most small workloads. If you're hitting performance limits with in-memory storage in TypeScript, use the Postgres adapter. In Python, move to a custom adapter backed by your production store.

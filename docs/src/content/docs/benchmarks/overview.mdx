@@ -1,88 +1,63 @@
 ---
 title: Benchmark Overview
-description: How Cognitive Memory compares to Mem0, FadeMem, and naive RAG on the LoCoMo benchmark.
+description: Current benchmark results and what each benchmark actually measures.
 ---
 
 import GroupedBarChart from '../../../components/charts/GroupedBarChart';
-import ProgressionLineChart from '../../../components/charts/ProgressionLineChart';
 
-## At a glance
+## Current results
 
-Cognitive Memory was benchmarked against three baselines on the LoCoMo long-conversation dataset (10 conversations, 1540 questions):
+These are the current logged results used by the May 2026 paper draft. Older Runs A-K/L/M are historical unless a page explicitly labels them as a pilot or ablation.
 
 <GroupedBarChart client:visible
   data={[
-    { system: 'Cognitive Memory', overall: 44.8, multiHop: 48.5 },
-    { system: 'Mem0', overall: 26.3, multiHop: 28.4 },
-    { system: 'FadeMem', overall: 27.2, multiHop: 29.4 },
-    { system: 'Naive RAG', overall: 20, multiHop: 15 },
+    { benchmark: 'LoCoMo overall F1', primary: 44.8 },
+    { benchmark: 'LoCoMo multi-hop F1', primary: 48.5 },
+    { benchmark: 'LongMemEval-S accuracy', primary: 70.2 },
+    { benchmark: 'LTI-Bench accuracy', primary: 88.1 },
+    { benchmark: 'LTI-Bench F1', primary: 69.7 },
   ]}
-  xKey="system"
+  xKey="benchmark"
   bars={[
-    { dataKey: 'overall', name: 'Overall', color: '#8b5cf6' },
-    { dataKey: 'multiHop', name: 'Multi-hop', color: '#06b6d4' },
+    { dataKey: 'primary', name: 'Score', color: '#8b5cf6' },
   ]}
-  yDomain={[0, 55]}
+  yDomain={[0, 100]}
   highlightFirst={true}
 />
 
-## What these numbers mean
+| Benchmark | What it stresses | Current result |
+|-----------|------------------|----------------|
+| LoCoMo | Long conversational recall and multi-hop QA | 44.8% overall token F1; 48.5% multi-hop token F1 |
+| LongMemEval-S | Long-horizon human-assistant memory across task types | 70.2% task-averaged accuracy |
+| LTI-Bench v2 | Controlled lifecycle behavior over 30 simulated days | 88.1% accuracy; 69.7% F1; 100% critical retention |
 
-**Overall accuracy** measures the percentage of questions the system answers correctly, using LLM-evaluated scoring (GPT-4o judges whether the generated answer matches the ground truth).
+## Read the benchmarks by lifecycle stage
 
-**Multi-hop accuracy** measures questions that require combining information from multiple stored memories. These are the hardest questions — and the ones where memory architecture matters most.
+No single memory benchmark proves that a system is "good at memory." Each benchmark rewards a different part of the lifecycle.
 
-## Where Cognitive Memory is strongest
+LoCoMo is most useful for retrieval coverage, multi-hop associations, and answer utilization over long conversations. LongMemEval-S stresses temporal updates, abstention, and longer human-assistant histories. LTI-Bench is smaller, but it directly probes lifecycle mechanisms such as decay floors, retrieval reinforcement, conflict supersession, and core-memory retention.
 
-Three mechanisms drive the performance advantage:
+That means a high score on one benchmark should not be treated as a universal memory score. The right benchmark depends on the kind of memory your application needs.
 
-### 1. Decay-weighted retrieval
+## Current interpretation
 
-Instead of treating all memories equally, retrieval scoring penalizes old memories and rewards recent, frequently-accessed ones. This naturally surfaces the most relevant context without manual curation.
+Cognitive Memory is competitive under the stated protocols, with its strongest evidence on lifecycle behavior and multi-hop recall:
 
-### 2. Associative linking
+- LoCoMo multi-hop F1 is 48.5%, compared with Mem0 28.4% and FadeMem 29.4% under the cited comparison protocol.
+- LongMemEval-S is 70.2%, competitive with ENGRAM-class single-stage memory systems but not a current leaderboard claim.
+- LTI-Bench retains 100% of identity-critical facts in the controlled 30-day harness.
 
-Memories that were co-encoded (synaptic tagging) or co-retrieved (strengthening) form links. When one memory is recalled, its neighbors are also activated. This is the key mechanism for multi-hop reasoning — answering "what is Sarah's brother's job?" requires linking the "Sarah has a brother named Tom" memory with the "Tom works as a dentist" memory.
+## Sources
 
-### 3. Deep recall with re-ranking
-
-The benchmark's best configuration adds an LLM re-ranking step after retrieval. Broad candidate recall (k=60) catches relevant memories even if they score low, and the re-ranker filters noise. This three-stage pipeline (embedding recall, R^alpha scoring, LLM re-ranking) is the key insight from our tuning work.
-
-## The benchmark configurations
-
-We ran multiple configurations to isolate the contribution of each mechanism:
-
-<ProgressionLineChart client:visible
-  data={[
-    { run: 'A', overall: 28.2, multiHop: 26.0 },
-    { run: 'B', overall: 27.7, multiHop: 24.6 },
-    { run: 'E', overall: 38.2, multiHop: 33.7 },
-    { run: 'Full', overall: 44.8, multiHop: 48.5 },
-    { run: 'H*', overall: 47.8, multiHop: 59.3 },
-  ]}
-  xKey="run"
-  lines={[
-    { dataKey: 'overall', name: 'Overall', color: '#8b5cf6' },
-    { dataKey: 'multiHop', name: 'Multi-hop', color: '#06b6d4' },
-  ]}
-  yDomain={[0, 65]}
-/>
-
-*Run H is conv 0 only
-
-Each jump tells a story:
-- A to E: tuned prompt and deep recall add +10pp overall
-- E to Full: broader recall, lifecycle scoring, and aligned prompt changes produce the latest full-set result
-- Full to H: LLM re-ranking on the conv-0 pilot shows the upside of larger candidate pools
-
-See [Methodology](/benchmarks/methodology/) for how we run these benchmarks.
+- Paper and arXiv source notes: [cognitive-memory-benchmarks/paper](https://github.com/bhekanik/cognitive-memory/tree/main/cognitive-memory-benchmarks/paper)
+- Experiment log: [experimentlog.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md)
+- Benchmark overview notes: [benchmarks-overview.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/docs/benchmarks-overview.md)
 
 ## Dive deeper
 
-- [Multi-hop results](/benchmarks/multi-hop/) — detailed breakdown of multi-hop performance
-- [LoCoMo results](/benchmarks/locomo/) — full per-conversation breakdown
-- [vs. Mem0](/benchmarks/vs-mem0/) — direct comparison
-- [vs. FadeMem](/benchmarks/vs-fademem/) — direct comparison
-- [vs. RAG](/benchmarks/vs-rag/) — why cognitive memory beats naive retrieval
-- [Why multi-hop matters](/benchmarks/why-multi-hop-matters/) — the flagship pitch
-- [Methodology](/benchmarks/methodology/) — how we benchmark
+- [LoCoMo results](/benchmarks/locomo/)
+- [Multi-hop results](/benchmarks/multi-hop/)
+- [Methodology](/benchmarks/methodology/)
+- [vs. Mem0](/benchmarks/vs-mem0/)
+- [vs. FadeMem](/benchmarks/vs-fademem/)
+- [vs. RAG](/benchmarks/vs-rag/)

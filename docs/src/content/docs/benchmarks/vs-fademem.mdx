@@ -1,6 +1,6 @@
 ---
 title: vs. FadeMem
-description: How Cognitive Memory compares to FadeMem on the LoCoMo benchmark.
+description: A sober comparison with FadeMem under the stated LoCoMo protocol.
 ---
 
 import GroupedBarChart from '../../../components/charts/GroupedBarChart';
@@ -9,8 +9,8 @@ import GroupedBarChart from '../../../components/charts/GroupedBarChart';
 
 <GroupedBarChart client:visible
   data={[
-    { metric: 'Overall', cogMem: 44.8, fadeMem: 27.2 },
-    { metric: 'Multi-hop', cogMem: 48.5, fadeMem: 29.4 },
+    { metric: 'Overall token F1', cogMem: 44.8, fadeMem: 27.2 },
+    { metric: 'Multi-hop token F1', cogMem: 48.5, fadeMem: 29.4 },
   ]}
   xKey="metric"
   bars={[
@@ -20,81 +20,24 @@ import GroupedBarChart from '../../../components/charts/GroupedBarChart';
   yDomain={[0, 55]}
 />
 
-With deep recall + re-ranking (Run H, conv 0):
+## What this comparison says
 
-<GroupedBarChart client:visible
-  data={[
-    { metric: 'Overall', cogMem: 47.8, fadeMem: 27.2 },
-    { metric: 'Multi-hop', cogMem: 59.3, fadeMem: 29.4 },
-  ]}
-  xKey="metric"
-  bars={[
-    { dataKey: 'cogMem', name: 'Cognitive Memory (Run H)', color: '#8b5cf6' },
-    { dataKey: 'fadeMem', name: 'FadeMem', color: '#10b981' },
-  ]}
-  yDomain={[0, 65]}
-/>
+FadeMem is important because it takes forgetting seriously. It moves beyond static vector memory by adding temporal decay. Cognitive Memory builds on a similar intuition but treats decay as one part of a larger lifecycle: reinforcement, associations, cold storage, deep recall, and consolidation.
 
-## What FadeMem does
+Under the cited LoCoMo protocol, Cognitive Memory scores higher overall and on multi-hop. The result should be read as evidence for the lifecycle stack, not as a blanket claim that every application needs that stack.
 
-FadeMem is a research system that introduces temporal decay to memory retrieval. It applies a forgetting curve to penalize old memories during retrieval. Key characteristics:
+## Architectural difference
 
-- Implements basic Ebbinghaus-style decay
-- Decays memories based on age and importance
-- No retrieval-based strengthening (no spaced repetition)
-- No associative linking
-- No tiered storage or consolidation
+FadeMem focuses on fading memory over time. Cognitive Memory adds:
 
-## Where Cognitive Memory goes further
-
-### 1. Retrieval strengthening
-
-FadeMem applies decay but doesn't strengthen memories when they're retrieved. In Cognitive Memory, every retrieval boosts stability, creating a spaced repetition dynamic. Important memories that are frequently accessed become increasingly resistant to decay.
-
-FadeMem's decay is monotonic — once a memory starts fading, it can only get weaker. Cognitive Memory's decay is non-monotonic — retrieval can reverse the trend.
-
-### 2. Associative graph
-
-FadeMem retrieves memories independently. Cognitive Memory creates and maintains an association graph through synaptic tagging and co-retrieval strengthening. This is the primary driver of the multi-hop advantage.
-
-### 3. Core memory protection
-
-FadeMem has no concept of protected memories. All memories decay at the same rates (modulated by type and importance). Cognitive Memory's core memories have a 0.60 retention floor, ensuring identity-critical facts are always available.
-
-### 4. Tiered storage
-
-FadeMem keeps all memories in a single store. Cognitive Memory migrates faded memories to cold storage, reducing search noise. Cold memories can still be activated through associations, preserving multi-hop paths.
-
-### 5. Consolidation
-
-FadeMem doesn't consolidate fading memories. Over time, the memory store accumulates many faded-but-present memories that add noise to search results. Cognitive Memory compresses groups of fading memories into summaries, maintaining signal quality.
-
-### 6. Deep recall
-
-When consolidation compresses memories, Cognitive Memory preserves the originals in cold storage accessible via deep recall. FadeMem has no equivalent mechanism.
-
-## The decay-only trap
-
-FadeMem demonstrates an important insight: **decay alone isn't enough.** Applying forgetting curves to memory retrieval is a good idea, but without complementary mechanisms (strengthening, associations, protection, consolidation), the improvement over naive RAG is modest.
-
-FadeMem's published LoCoMo results (27.2% overall) are only marginally better than naive RAG (~20%). The decay model helps with noise reduction, but without associations for multi-hop reasoning and strengthening for importance tracking, the gains plateau quickly.
-
-Cognitive Memory's approach treats decay as one component of a complete memory lifecycle: encode -> decay -> strengthen -> associate -> consolidate -> recall.
-
-## Replicating FadeMem's approach
-
-We ran a direct replication of FadeMem's settings (Run B) to verify our baseline:
-
-| Config | Overall | Multi-hop |
-|--------|:-------:|:---------:|
-| FadeMem published | 27.2% | 29.4% |
-| Our Run B (FadeMem settings) | 27.7% | 24.6% |
-
-Results are comparable (within noise), confirming our evaluation methodology is consistent.
+- retrieval-based strengthening, so recalled memories can become more stable
+- association links, so related memories can travel together
+- core promotion, so frequently used cross-session facts get protected
+- hot/cold/stub tiers, so normal search stays cleaner
+- deep recall, so cold and superseded originals can be searched when exact details matter
 
 ## Fair comparison notes
 
-- FadeMem results are from their published paper
-- We replicated their settings in our framework (Run B) for verification
-- Both systems use the same LoCoMo dataset and evaluation protocol
-- The comparison is between FadeMem's published numbers and our latest full-run result
+- FadeMem results are cited as published baseline numbers.
+- Earlier docs overclaimed that some FadeMem capacity/dormancy details were undisclosed; those claims have been removed.
+- This page compares reported benchmark behavior and design emphasis. It does not claim a full implementation audit of FadeMem.

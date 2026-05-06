@@ -184,7 +184,8 @@ Our benchmarks showed +14pp accuracy improvement going from k=10 to k=60. If you
 ### Deep recall (search parameter)
 
 ```python
-results = await mem.search(query, deep_recall=True)
+response = await mem.search(query, deep_recall=True)
+results = response.results
 ```
 
 When enabled, superseded memories (originals that were consolidated into summaries) are included in search results with a penalty (`deep_recall_penalty`, default 0.5x score).

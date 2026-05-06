@@ -26,7 +26,7 @@
 		<g class="pipe-stage ps1">
 			<rect x="10" y="20" width="210" height="80" rx="12" fill="url(#pipe-grad-1)" stroke="var(--cm-cyan)" stroke-width="1.5" class="stage-box" />
 			<text x="115" y="52" text-anchor="middle" fill="var(--cm-cyan)" font-size="14" font-weight="600">Embedding Recall</text>
-			<text x="115" y="72" text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="11">top_k x 3 candidates</text>
+			<text x="115" y="72" text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="11">topK x rerankFactor</text>
 			<text x="115" y="130" text-anchor="middle" fill="var(--sl-color-gray-4)" font-size="10">Stage 1</text>
 		</g>
 
@@ -40,7 +40,7 @@
 		<g class="pipe-stage ps2">
 			<rect x="280" y="20" width="210" height="80" rx="12" fill="url(#pipe-grad-2)" stroke="var(--cm-purple)" stroke-width="1.5" class="stage-box" />
 			<text x="385" y="52" text-anchor="middle" fill="var(--cm-purple)" font-size="14" font-weight="600">R&#x3B1; Temporal Scoring</text>
-			<text x="385" y="72" text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="11">score = sim x R^0.3</text>
+			<text x="385" y="72" text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="11">score = sim x R^alpha</text>
 			<text x="385" y="130" text-anchor="middle" fill="var(--sl-color-gray-4)" font-size="10">Stage 2</text>
 		</g>
 

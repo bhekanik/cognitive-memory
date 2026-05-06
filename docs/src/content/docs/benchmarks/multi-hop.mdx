@@ -1,87 +1,48 @@
 ---
 title: Multi-hop Results
-description: Why multi-hop questions are the real test of a memory system, and how Cognitive Memory excels.
+description: Why multi-hop questions are a useful stress test for agent memory.
 ---
 
 import HorizontalBarChart from '../../../components/charts/HorizontalBarChart';
-import ProgressionLineChart from '../../../components/charts/ProgressionLineChart';
 
 ## What are multi-hop questions?
 
-Multi-hop questions require combining information from two or more stored memories to produce an answer. They test whether a memory system can connect related facts across different conversations and time periods.
+Multi-hop questions require combining information from two or more stored memories.
 
-**Single-hop example:**
-- Q: "What is Alex's job?"
-- Requires: one memory ("Alex is a software engineer")
+**Single-hop example:** "What is Alex's job?" only needs "Alex is a software engineer."
 
-**Multi-hop example:**
-- Q: "What does Sarah's brother do for a living?"
-- Requires: "Sarah has a brother named Tom" + "Tom works as a dentist"
+**Multi-hop example:** "What does Sarah's brother do for a living?" needs "Sarah has a brother named Tom" and "Tom works as a dentist."
 
-Multi-hop is where most memory systems fail. They retrieve the one most similar memory to the query, miss the connecting facts, and produce incomplete or wrong answers.
+This matters because vector search retrieves each memory independently. A memory can be necessary for the answer even if it is not very similar to the query.
 
-## Multi-hop results
+## Current LoCoMo multi-hop result
 
 <HorizontalBarChart client:visible
   data={[
-    { system: 'Run H*', accuracy: 59.3 },
-    { system: 'Full run', accuracy: 48.5 },
+    { system: 'Cognitive Memory', accuracy: 48.5 },
     { system: 'FadeMem', accuracy: 29.4 },
     { system: 'Mem0', accuracy: 28.4 },
     { system: 'Naive RAG', accuracy: 15 },
   ]}
   yKey="system"
   dataKey="accuracy"
-  name="Multi-hop Accuracy"
-  colors={['#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#a1a1aa']}
-  xDomain={[0, 65]}
+  name="Multi-hop token F1"
+  colors={['#8b5cf6', '#10b981', '#f59e0b', '#a1a1aa']}
+  xDomain={[0, 55]}
 />
 
-*Run H is conversation 0 only.
+The active current result is 48.5% multi-hop token F1 on the full LoCoMo category 1-4 set. Older conv-0 rerank pilots are useful ablations, not full benchmark results.
 
-Cognitive Memory's latest full-run multi-hop score is 48.5% under the stated protocol, compared with Mem0 at 28.4%, FadeMem at 29.4%, and naive RAG at roughly 15%. The conv-0 rerank pilot reaches 59.3%, but it is not a full benchmark run.
+## Why associations help
 
-## Why Cognitive Memory wins at multi-hop
+When related memories are encoded or retrieved together, Cognitive Memory stores an association between them. Later, retrieving one memory can activate linked memories even if those linked memories would not rank highly by query similarity alone.
 
-### Associative linking bridges the gap
+That is the intended role of the association graph: bridge facts that belong together but do not all look like the user's exact question.
 
-When "Sarah has a brother named Tom" and "Tom works as a dentist" are encoded in the same conversation, synaptic tagging creates a link between them. Later, when the query "What does Sarah's brother do?" retrieves the Sarah memory, the association activates the Tom memory too.
+## Why deep recall helps
 
-Without associations, the query embedding is semantically close to "Sarah" and "brother" but not to "dentist" — so the Tom memory would never surface through vector search alone.
+Consolidation can move originals out of the normal search path. Deep recall brings cold and superseded records back into the candidate set, while still excluding stubs. That gives the system a way to recover exact names, dates, and details when summaries are not enough.
 
-### Deep recall recovers specifics
+## Takeaway
 
-Consolidated summaries might merge "Tom works as a dentist" into a broader summary that loses the specific profession. Deep recall brings back the original memory, ensuring the specific answer is available.
-
-### Broad candidate recall catches weak matches
-
-With k=60, the system retrieves a large candidate pool. Multi-hop questions often have weak similarity to one of the required memories — "What does Sarah's brother do?" is semantically distant from "Tom works as a dentist." Broad recall catches these weak but critical matches.
-
-### LLM re-ranking filters noise
-
-The broad candidate pool contains noise. The LLM re-ranker (Run H) evaluates each candidate's relevance to the specific question, filtering out false positives and promoting true positives. This is particularly effective for multi-hop because the re-ranker can recognize that "Tom works as a dentist" is relevant to "What does Sarah's brother do?" even though the embedding similarity is low.
-
-## Breakdown by question type
-
-From the LoCoMo benchmark, questions are categorized by the number of hops required:
-
-<ProgressionLineChart client:visible
-  data={[
-    { hops: '1-hop', runA: 30.1, runF: 43.8, runH: 49.2 },
-    { hops: '2-hop', runA: 24.3, runF: 45.2, runH: 57.8 },
-    { hops: '3+', runA: 22.1, runF: 41.6, runH: 62.1 },
-  ]}
-  xKey="hops"
-  lines={[
-    { dataKey: 'runA', name: 'Run A', color: '#a1a1aa', dashed: true },
-    { dataKey: 'runF', name: 'Run F', color: '#8b5cf6' },
-    { dataKey: 'runH', name: 'Run H*', color: '#06b6d4' },
-  ]}
-  yDomain={[0, 70]}
-/>
-
-The improvement is largest for 3+ hop questions — exactly where associative linking and deep recall provide the most value.
-
-## Key takeaway
-
-Multi-hop is the acid test for memory systems. Any system can retrieve a single relevant document. The hard part is connecting related facts across time, conversations, and topics. Cognitive Memory's association graph and deep recall mechanisms are purpose-built for this challenge.
+Multi-hop is not "the" memory benchmark. It is a useful lens for one part of memory: whether a system can connect facts across time and context. If your application mostly needs isolated factual lookup, multi-hop matters less. If it needs personal-assistant-style reasoning over weeks or months, it matters a lot.

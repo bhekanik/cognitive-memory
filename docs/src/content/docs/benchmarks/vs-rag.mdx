@@ -1,6 +1,6 @@
 ---
 title: vs. Naive RAG
-description: Why cognitive memory beats standard retrieval-augmented generation.
+description: Where a lifecycle memory system differs from standard retrieval-augmented generation.
 ---
 
 import GroupedBarChart from '../../../components/charts/GroupedBarChart';
@@ -32,7 +32,7 @@ Naive RAG (Retrieval-Augmented Generation) is the simplest approach to memory:
 
 No decay, no strengthening, no associations, no consolidation. Every chunk competes equally regardless of age, importance, or access history.
 
-## Five reasons Cognitive Memory wins
+## Five architectural differences
 
 ### 1. Noise reduction through decay
 
@@ -50,7 +50,7 @@ Cognitive Memory extracts discrete facts through LLM extraction. Each memory is 
 
 This is the biggest differentiator. Naive RAG retrieves chunks independently — if answering a question requires two pieces of information from different conversations, both chunks must independently score highly against the query.
 
-Cognitive Memory's association graph links related memories. Retrieving one activates its neighbors. The ~32pp multi-hop advantage comes primarily from this mechanism.
+Cognitive Memory's association graph links related memories. Retrieving one activates its neighbors. The multi-hop gap is where this mechanism matters most.
 
 ### 4. Importance tracking
 
@@ -62,7 +62,7 @@ Cognitive Memory assigns importance scores at extraction time and tracks stabili
 
 When a user says "I moved from Portland to Seattle," naive RAG now has two contradictory chunks. Both might be retrieved, confusing the LLM.
 
-Cognitive Memory detects the contradiction, demotes the old memory, and ensures the new memory inherits importance. Only current information surfaces.
+Cognitive Memory queues likely contradictions during ingestion and resolves them during maintenance. Resolved older memories are demoted/superseded so current information has a cleaner path into retrieval.
 
 ## The chunk overlap problem
 
@@ -78,7 +78,7 @@ Naive RAG works adequately for:
 - Document QA (static content that doesn't change)
 - Prototyping (before investing in a proper memory system)
 
-But for multi-session agents that need to reason across conversations, track evolving facts, and handle contradictions, Cognitive Memory provides a fundamentally better architecture.
+But for multi-session agents that need to reason across conversations, track evolving facts, and handle contradictions, a lifecycle memory system gives you control that naive RAG does not try to provide.
 
 ## Migration path
 

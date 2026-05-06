@@ -29,13 +29,13 @@ The summary captures the gist but loses specific locations, dates, and details. 
 
 ```python
 # Normal search (excludes cold, superseded, and stub records)
-results = await mem.search("rock climbing gym")
+response = await mem.search("rock climbing gym")
 
 # Deep recall (includes cold + superseded records at 0.5 penalty; stubs excluded)
-results = await mem.search("rock climbing gym", deep_recall=True)
+response = await mem.search("rock climbing gym", deep_recall=True)
 
 # Each result indicates if it came from deep recall
-for r in results:
+for r in response.results:
     if r.via_deep_recall:
         print(f"[deep] {r.memory.content}")
     else:
@@ -101,13 +101,13 @@ There are two ways to surface expired plan/transient memories:
 1. **Deep recall mode** — when `deep_recall=True`, expired transients are included alongside superseded memories (both receive the deep recall penalty):
 
 ```python
-results = await mem.search("tokyo trip", deep_recall=True)
+response = await mem.search("tokyo trip", deep_recall=True)
 ```
 
 2. **Explicit flag** — use `include_expired_transients=True` to include expired plan/transient memories without enabling full deep recall:
 
 ```python
-results = await mem.search("tokyo trip", include_expired_transients=True)
+response = await mem.search("tokyo trip", include_expired_transients=True)
 ```
 
 ### Configuration

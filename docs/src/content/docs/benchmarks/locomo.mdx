@@ -1,111 +1,74 @@
 ---
 title: LoCoMo Results
-description: Full breakdown of Cognitive Memory's performance on the LoCoMo long-conversation benchmark.
+description: Current Cognitive Memory results on the LoCoMo long-conversation benchmark.
 ---
 
 import GroupedBarChart from '../../../components/charts/GroupedBarChart';
-import ProgressionLineChart from '../../../components/charts/ProgressionLineChart';
-import HeatmapTable from '../../../components/charts/HeatmapTable.astro';
 
 ## About LoCoMo
 
-LoCoMo (Long Conversation Memory) is a benchmark designed to test long-term memory systems. It consists of 10 multi-session conversations (each 10-30 turns), with 1,540 questions testing different aspects of memory:
+LoCoMo (Long Conversation Memory) tests long-term conversational memory across multiple question types:
 
-- **Single-hop:** Direct recall of a single fact
-- **Multi-hop:** Combining 2+ facts to answer
-- **Temporal:** Questions about when events happened
-- **Open-ended:** Questions with no single correct answer
+- **Single-hop:** direct recall of a single fact
+- **Multi-hop:** combining two or more facts
+- **Temporal:** questions about when events happened
+- **Open-ended:** questions with looser answer boundaries
 
-Each conversation simulates a realistic user-agent interaction over weeks or months, with facts that evolve, contradict, and interleave.
+The standard result here uses 10 conversations and the 1,540 category 1-4 questions reported in the paper/logs.
 
-## Our results (latest full run — 10 conversations)
-
-Configuration: latest SDK scoring and lifecycle settings, evaluated on LoCoMo categories 1-4.
-
-### Per-conversation breakdown
-
-<HeatmapTable
-  headers={['Overall', 'Single-hop', 'Multi-hop', 'Temporal']}
-  rows={[
-    { label: 'Conv 0', values: [40.5, 44.9, 43.2, 33.3] },
-    { label: 'Conv 1', values: [44.1, 44.9, 49.0, 39.3] },
-    { label: 'Conv 2', values: [43.3, 46.3, 46.9, 36.7] },
-    { label: 'Conv 3', values: [42.5, 43.8, 47.3, 36.0] },
-    { label: 'Conv 4', values: [41.9, 43.8, 48.2, 34.7] },
-    { label: 'Conv 5', values: [45.3, 46.1, 51.2, 39.3] },
-    { label: 'Conv 6', values: [38.9, 40.4, 43.6, 33.3] },
-    { label: 'Conv 7', values: [42.1, 44.9, 47.5, 34.0] },
-    { label: 'Conv 8', values: [41.8, 42.7, 46.9, 36.0] },
-    { label: 'Conv 9', values: [43.6, 44.9, 46.9, 40.0] },
-    { label: 'Average', values: [44.8, 35.4, 48.5, 31.5] },
-  ]}
-/>
-
-### Run H (Conv 0 only — deep recall + LLM re-ranking)
+## Current full-run result
 
 <GroupedBarChart client:visible
   data={[
-    { metric: 'Overall', runF: 40.5, runH: 47.8 },
-    { metric: 'Multi-hop', runF: 43.2, runH: 59.3 },
+    { metric: 'Overall token F1', value: 44.8 },
+    { metric: 'Multi-hop token F1', value: 48.5 },
+    { metric: 'Judge accuracy', value: 58.4 },
   ]}
   xKey="metric"
   bars={[
-    { dataKey: 'runF', name: 'Run F', color: '#8b5cf6' },
-    { dataKey: 'runH', name: 'Run H', color: '#06b6d4' },
+    { dataKey: 'value', name: 'Score', color: '#8b5cf6' },
   ]}
-  yDomain={[0, 65]}
-  height={250}
+  yDomain={[0, 70]}
 />
 
-The jump from deep recall + re-ranking is dramatic, especially for multi-hop. Full 10-conversation Run H results are in progress.
+| Metric | Result |
+|--------|:------:|
+| Overall token F1 | 44.8% |
+| Multi-hop token F1 | 48.5% |
+| Judge accuracy | 58.4% |
+| Oracle evidence ceiling | 63.9% LoCoMo scoring / 61.1% Mem0 scoring |
 
-## Comparison across runs
+The current LoCoMo result reaches about 70.0% of the LoCoMo oracle-evidence ceiling. That is the right framing: retrieval and answer utilization still leave headroom.
 
-<ProgressionLineChart client:visible
-  data={[
-    { run: 'A', overall: 28.2, multiHop: 26.0 },
-    { run: 'B', overall: 27.7, multiHop: 24.6 },
-    { run: 'E', overall: 38.2, multiHop: 33.7 },
-    { run: 'Full', overall: 44.8, multiHop: 48.5 },
-    { run: 'H*', overall: 47.8, multiHop: 59.3 },
-  ]}
-  xKey="run"
-  lines={[
-    { dataKey: 'overall', name: 'Overall', color: '#8b5cf6' },
-    { dataKey: 'multiHop', name: 'Multi-hop', color: '#06b6d4' },
-  ]}
-  yDomain={[0, 65]}
-/>
+## What changed from older runs
+
+Older run labels such as Run F and Run H are historical. The active LoCoMo number is the current SDK full run, not the earlier conv-0 rerank pilot.
+
+The old conv-0 rerank pilot remains useful as an ablation signal, but it should not be cited as a full benchmark result.
 
 ## What we learned
 
-### Retrieval precision is the bottleneck
+### Multi-hop is the strongest LoCoMo signal
 
-The biggest gains came from improving retrieval quality, not from changing the answer generation prompt or the decay model. The three-stage pipeline (embedding recall -> R^alpha scoring -> LLM re-ranking) was the key breakthrough.
+The 48.5% multi-hop F1 result is the clearest LoCoMo evidence for associative retrieval and broader candidate recall. Multi-hop questions often require a memory that is related to another retrieved memory, not directly similar to the query.
 
-### Broader recall helps more than better scoring
+### Retrieval is still the bottleneck
 
-Going from narrow to broader recall improved overall retrieval quality. The extra candidates contain relevant memories that rank poorly by embedding similarity alone but are critical for answering the question.
+The oracle evidence ceiling is much higher than the current end-to-end score. That means the architecture helps, but better retrieval and answer use are still major improvement areas.
 
-### Deep recall and re-ranking synergize
+### Temporal questions remain difficult
 
-Deep recall expands the candidate pool with superseded originals. Re-ranking filters the noise this creates. Neither works as well alone:
-
-- Deep recall without re-ranking: adds noise, minimal improvement
-- Re-ranking without deep recall: helps, but misses consolidated details
-- Both together: +7.3pp overall, +16.1pp multi-hop
-
-### Temporal questions are hardest
-
-Temporal accuracy (36.7%) consistently lags behind other categories. Questions like "when did the user go hiking?" require precise date extraction and retrieval, which embedding similarity handles poorly. This is an area for future improvement.
+Temporal questions require precise date extraction and as-of reasoning. They remain harder than ordinary factual recall and are called out as future work in the paper.
 
 ## Methodology
 
-All results use:
-- GPT-4o for answer evaluation (LLM-as-judge)
-- GPT-4o-mini for memory extraction
-- text-embedding-3-small for embeddings (1536 dimensions)
-- Temperature 0 for deterministic answers
-- Ground truth from the LoCoMo dataset
+All current LoCoMo results use:
 
-See [Methodology](/benchmarks/methodology/) for full details.
+- 10 conversations
+- 1,540 category 1-4 QA items
+- `gpt-4o-mini` for extraction and answering
+- `text-embedding-3-small` embeddings
+- GPT-4o judge
+- current SDK scoring: `sim(m,q) * R(m)^alpha`, default `alpha=0.3`
+
+See [Methodology](/benchmarks/methodology/) for the pipeline and [experimentlog.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md) for logged artifacts.

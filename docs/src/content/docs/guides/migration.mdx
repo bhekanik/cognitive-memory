@@ -12,7 +12,7 @@ description: How to migrate from Mem0, FadeMem, or naive RAG to Cognitive Memory
 | `MemoryClient` | `CognitiveMemory` / `SyncCognitiveMemory` |
 | `client.add()` | `mem.add()` or `mem.extract_and_store()` |
 | `client.search()` | `mem.search()` |
-| `client.update()` | Handled automatically by conflict detection |
+| `client.update()` | Queued/deferred conflict handling, or explicit update APIs |
 | `client.delete()` | `await adapter.delete(memory_id)` |
 | Memory categories | `MemoryCategory` enum (episodic, semantic, procedural, core) |
 | No decay | Ebbinghaus decay with floors |
@@ -32,7 +32,8 @@ results = m.search("coffee", user_id="user-1")
 from cognitive_memory import SyncCognitiveMemory
 mem = SyncCognitiveMemory()
 mem.add("User likes coffee", category="semantic", importance=0.5)
-results = mem.search("coffee")
+response = mem.search("coffee")
+results = response.results
 ```
 
 #### 2. Replace conversation ingestion
@@ -56,8 +57,8 @@ for r in results:
     print(r["memory"])
 
 # After (Cognitive Memory)
-results = mem.search("coffee")
-for r in results:
+response = mem.search("coffee")
+for r in response.results:
     print(r.memory.content)
     print(f"  score={r.combined_score:.3f}")
     print(f"  retention={r.retention_score:.3f}")
@@ -97,7 +98,7 @@ for m0 in mem0_memories:
 
 - Search results include retention scores — you may want to filter by `combined_score` instead of raw similarity
 - Memories decay over time — you'll see fewer old results (this is a feature)
-- Conflict detection automatically handles updates and contradictions
+- Conflict detection queues likely updates and contradictions for maintenance-time resolution
 
 ---
 
@@ -109,19 +110,19 @@ for m0 in mem0_memories:
 |----------------|---------------------------|
 | Forgetting curve | Ebbinghaus decay with `R(m) = max(floor, exp(-dt / (S * B * beta_c)))` |
 | Decay-weighted retrieval | `score = sim * R^alpha` with configurable alpha |
-| No strengthening | Two-tier retrieval boosting |
-| No associations | Synaptic tagging + co-retrieval strengthening |
-| No consolidation | LLM compression of fading clusters |
+| Retrieval strengthening | Two-tier retrieval boosting |
+| Associations | Synaptic tagging + co-retrieval strengthening |
+| Consolidation | LLM compression of fading clusters with superseded originals available through deep recall |
 
 ### Key differences
 
-FadeMem applies decay to retrieval scoring but doesn't strengthen memories on retrieval or create associations. To migrate:
+FadeMem applies decay to retrieval scoring. Cognitive Memory adds retrieval reinforcement, associations, and tiered recall. To migrate:
 
 1. Replace your FadeMem memory store with a Cognitive Memory instance
 2. Re-ingest your conversation history using `extract_and_store()`
 3. The decay, strengthening, and association mechanisms activate automatically
 
-You'll see immediate improvement on multi-hop queries due to the association graph.
+Multi-hop queries are where the association graph is most likely to matter.
 
 ---
 
@@ -132,7 +133,7 @@ You'll see immediate improvement on multi-hop queries due to the association gra
 | RAG component | Cognitive Memory replacement |
 |-------------|---------------------------|
 | Text splitter / chunker | `extract_and_store()` (LLM extraction) |
-| Vector database (Pinecone, Weaviate, etc.) | Cognitive Memory adapter (Postgres, etc.) |
+| Vector database (Pinecone, Weaviate, etc.) | Cognitive Memory adapter |
 | Similarity search | `mem.search()` with decay-weighted scoring |
 | Metadata filters | Memory categories + importance thresholds |
 
@@ -160,8 +161,8 @@ results = vector_db.query(embed(query), top_k=5)
 context = "\n".join(r.text for r in results)
 
 # After (Cognitive Memory)
-results = mem.search(query, top_k=10)
-context = "\n".join(r.memory.content for r in results)
+response = mem.search(query, top_k=10)
+context = "\n".join(r.memory.content for r in response.results)
 ```
 
 #### 3. Remove manual metadata management
@@ -178,7 +179,7 @@ RAG systems often use metadata for filtering (timestamps, categories, importance
 
 ### Migration tips
 
-- Start with the InMemory adapter for testing, then switch to Postgres for production
+- Start with the InMemory adapter for testing. In TypeScript, switch to Postgres or Convex for production; in Python, use JSONL for local persistence or a custom production adapter.
 - Use `embedder="hash"` for fast offline testing during migration
 - Set `run_maintenance_during_ingestion=False` for bulk re-ingestion, then call `tick()` once at the end
 - Compare retrieval quality by running the same queries against both systems during the transition period

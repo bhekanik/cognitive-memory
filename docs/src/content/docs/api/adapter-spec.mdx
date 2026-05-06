@@ -31,7 +31,7 @@ Store a new memory in the hot tier. The memory object has a pre-generated ID.
 
 Retrieve a memory by ID from any tier (hot, cold, or stub).
 
-### `get_batch(memory_ids) -> list[Memory]`
+### `get_batch(memory_ids) -> list[Memory]` / `getMemories(ids) -> Memory[]`
 
 Retrieve multiple memories by ID. May return fewer items than requested if some IDs don't exist.
 
@@ -51,24 +51,30 @@ Hard delete multiple memories.
 
 ## Vector search
 
-### `search_similar(query_embedding, top_k, include_superseded) -> list[tuple[Memory, float]]`
+### `search_similar(query_embedding, top_k, include_superseded, include_cold, include_stubs, user_id) -> list[tuple[Memory, float]]`
 
-Search hot-tier memories by cosine similarity.
+Search memories by cosine similarity.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query_embedding` | `list[float]` | -- | Query vector |
 | `top_k` | `int` | 10 | Max results |
 | `include_superseded` | `bool` | False | Include superseded memories (for deep recall) |
+| `include_cold` | `bool` | False | Include cold memories (for deep recall) |
+| `include_stubs` | `bool` | False | Include archived stubs. Normal engine calls keep this false. |
+| `user_id` | `str \| None` | None | Restrict results to one user when the adapter stores multiple users |
 
 Returns: List of `(Memory, similarity_score)` sorted by similarity descending.
 
 Must exclude:
-- Stub memories (always)
+- Cold memories (unless `include_cold=True`)
+- Stub memories (unless `include_stubs=True`; the engine keeps this false for normal and deep recall)
 - Superseded memories (unless `include_superseded=True`)
 - Memories without embeddings
 
-### `search_lexical(query_text, top_k) -> list[tuple[Memory, float]]` *(optional)*
+Normal `search()` calls use `include_cold=False`, `include_superseded=False`, and `include_stubs=False`. Deep recall uses `include_cold=True`, `include_superseded=True`, and `include_stubs=False`.
+
+### `search_lexical(query_text, top_k, include_superseded, include_cold, include_stubs, user_id) -> list[tuple[Memory, float]]` *(optional)*
 
 Lexical (keyword) search over memory content. Used by the engine when hybrid search is enabled.
 
@@ -76,12 +82,16 @@ Lexical (keyword) search over memory content. Used by the engine when hybrid sea
 |-----------|------|---------|-------------|
 | `query_text` | `str` | -- | Raw query string |
 | `top_k` | `int` | 10 | Max results |
+| `include_superseded` | `bool` | False | Include superseded memories |
+| `include_cold` | `bool` | False | Include cold memories |
+| `include_stubs` | `bool` | False | Include archived stubs |
+| `user_id` | `str \| None` | None | Restrict results to one user |
 
 Returns: List of `(Memory, relevance_score)` sorted by relevance descending.
 
 This method is **optional**. The default implementation returns an empty list. Adapters that support lexical search (BM25, `ts_vector`, text search indexes) should override it to enable hybrid retrieval.
 
-**TypeScript:** `searchLexical(queryText: string, topK?: number): Promise<ScoredMemory[]>` — also optional, defaults to returning an empty array.
+**TypeScript:** `searchLexical(queryText: string, filters?: MemoryFilters): Promise<ScoredMemory[]>` — also optional, defaults to returning an empty array.
 
 ---
 
@@ -100,7 +110,7 @@ Move a memory from cold back to hot tier. Reset `is_cold=False`, `cold_since=Non
 Replace a memory with a lightweight stub. The stub should have:
 - Same ID as the original
 - `is_stub = True`
-- `is_cold = True`
+- `is_cold = False`
 - `embedding = None`
 - Content replaced with `stub_content`
 - `stability = 0.0`
@@ -241,6 +251,10 @@ import { MemoryAdapter } from "cognitive-memory";
 
 class MyAdapter extends MemoryAdapter {
     async createMemory(memory: Omit<Memory, "id" | "createdAt" | "updatedAt">): Promise<string> {
+        ...
+    }
+
+    async getMemories(ids: string[]): Promise<Memory[]> {
         ...
     }
 }

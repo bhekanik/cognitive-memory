@@ -80,7 +80,7 @@ BM25 search only activates when the storage adapter implements the `search_lexic
 
 ## LLM reranking (optional)
 
-After hybrid retrieval scoring, an optional LLM reranking step can further refine results. When `rerank_enabled` is `True` and an LLM is available, the top `k_rerank` candidates (default 10) are sent to the LLM, which re-scores them for relevance against the original query. This is especially useful for ambiguous queries where vector similarity alone may not capture intent. See the [Scoring Pipeline](/concepts/scoring-pipeline/#stage-2c-llm-reranking-optional) for details on where this fits in the pipeline.
+After hybrid retrieval scoring, an optional LLM reranking step can further refine results. When reranking is enabled and an LLM is available, the engine retrieves an expanded candidate pool of `top_k * rerank_factor` candidates, with `k_rerank` as a floor, reranks that pool, then returns the requested `top_k`. This is especially useful for ambiguous queries where vector similarity alone may not capture intent. See the [Scoring Pipeline](/concepts/scoring-pipeline/#stage-2c-llm-reranking-optional) for details on where this fits in the pipeline.
 
 ## Deep recall penalty
 
@@ -100,6 +100,8 @@ from cognitive_memory import CognitiveMemoryConfig
 config = CognitiveMemoryConfig(
     retrieval_score_exponent=0.3,  # alpha
     deep_recall_penalty=0.5,
+    rerank_enabled=True,
+    rerank_factor=3,
 )
 ```
 
@@ -123,9 +125,8 @@ config = CognitiveMemoryConfig(
   <TabItem label="TypeScript">
     ```typescript
     const retention = this.calculateRetentionFor({ ... });
-    const finalScore = relevanceScore * retention;
+    const alpha = this.config.retrievalScoreExponent;
+    const combinedScore = relevanceScore * Math.pow(retention, alpha);
     ```
   </TabItem>
 </Tabs>
-
-Note: The TypeScript SDK currently uses alpha = 1.0 (raw retention). The Python SDK uses the configurable alpha exponent.

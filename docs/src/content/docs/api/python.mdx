@@ -73,7 +73,7 @@ Returns list of created `Memory` objects.
 
 #### `search(query, top_k, timestamp, session_id, deep_recall, trace) -> SearchResponse`
 
-Search memories with full retention-weighted scoring, associative expansion, and retrieval boosting.
+Canonical retrieval API. Search memories with retention-weighted scoring, associative expansion, optional deep recall, optional reranking, and retrieval boosting.
 
 ```python
 response = await mem.search(
@@ -89,6 +89,7 @@ results = response.results
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `deep_recall` | `bool` | `False` | Include cold and superseded records in the candidate set. Stubs stay excluded. |
 | `trace` | `bool` | `False` | When `True`, the response includes a `trace` field with scoring breakdown and pipeline timing details |
 
 Returns a `SearchResponse` object containing a `results` list of `SearchResult` objects sorted by `combined_score` descending, and an optional `trace` field when tracing is enabled.
@@ -146,7 +147,8 @@ from cognitive_memory import SyncCognitiveMemory
 
 mem = SyncCognitiveMemory(embedder="hash")
 mem.add("User likes coffee", importance=0.5)
-results = mem.search("coffee")
+response = mem.search("coffee")
+results = response.results
 stats = mem.get_stats()
 mem.clear()
 ```
@@ -210,7 +212,7 @@ from cognitive_memory import SearchResult
 | `retention_score` | `float` | R(m) from decay model |
 | `combined_score` | `float` | Semantic relevance weighted by retention^alpha |
 | `is_associative` | `bool` | Came via association link |
-| `via_deep_recall` | `bool` | From superseded memory |
+| `via_deep_recall` | `bool` | From a cold or superseded candidate included by deep recall |
 
 ---
 

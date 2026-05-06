@@ -38,6 +38,9 @@ Both Python and TypeScript SDKs define an abstract `MemoryAdapter` class. Your c
             self, query_embedding: list[float],
             top_k: int = 10,
             include_superseded: bool = False,
+            include_cold: bool = False,
+            include_stubs: bool = False,
+            user_id: str | None = None,
         ) -> list[tuple[Memory, float]]: ...
 
         # Tiered storage
@@ -115,14 +118,22 @@ Custom adapters may optionally implement `search_lexical` (Python) / `searchLexi
 
 ```python
 # Python
-async def search_lexical(self, query_text: str, top_k: int = 10) -> list[tuple[Memory, float]]:
+async def search_lexical(
+    self,
+    query_text: str,
+    top_k: int = 10,
+    include_superseded: bool = False,
+    include_cold: bool = False,
+    include_stubs: bool = False,
+    user_id: str | None = None,
+) -> list[tuple[Memory, float]]:
     # Implement BM25, full-text search, or any keyword-based retrieval
     ...
 ```
 
 ```typescript
 // TypeScript
-async searchLexical(queryText: string, topK?: number): Promise<ScoredMemory[]> {
+async searchLexical(queryText: string, filters?: MemoryFilters): Promise<ScoredMemory[]> {
     // Implement keyword-based retrieval
     ...
 }
@@ -135,18 +146,32 @@ async searchLexical(queryText: string, topK?: number): Promise<ScoredMemory[]> {
 This is the most performance-critical method. It must:
 
 1. Compute cosine similarity between the query embedding and all hot memories
-2. Optionally include superseded memories (when `include_superseded=True`)
-3. Exclude stubs
-4. Return results sorted by similarity score, descending
-5. Truncate to `top_k`
+2. Include cold memories only when `include_cold=True` / `includeCold=true`
+3. Include superseded memories only when `include_superseded=True` / `includeSuperseded=true`
+4. Exclude stubs unless `include_stubs=True` / `includeStubs=true`
+5. Return results sorted by similarity score, descending
+6. Truncate to `top_k`
 
 If your backend supports native vector search (pgvector, Pinecone, etc.), use it. Otherwise, fall back to brute-force:
 
 ```python
-async def search_similar(self, query_embedding, top_k=10, include_superseded=False):
+async def search_similar(
+    self,
+    query_embedding,
+    top_k=10,
+    include_superseded=False,
+    include_cold=False,
+    include_stubs=False,
+    user_id=None,
+):
     results = []
-    for mem in await self.all_hot():
-        if mem.embedding is None or mem.is_stub:
+    candidates = await self.all_active() if include_cold else await self.all_hot()
+    for mem in candidates:
+        if user_id is not None and mem.user_id != user_id:
+            continue
+        if mem.embedding is None:
+            continue
+        if mem.is_stub and not include_stubs:
             continue
         if mem.is_superseded and not include_superseded:
             continue
@@ -162,7 +187,7 @@ Your adapter must support three tiers. The engine calls `migrate_to_cold()`, `mi
 
 - Separate tables/collections (recommended for databases)
 - A `tier` column with an enum value
-- Separate key prefixes (for Redis)
+- Separate key prefixes or collections
 
 ### Transactions
 

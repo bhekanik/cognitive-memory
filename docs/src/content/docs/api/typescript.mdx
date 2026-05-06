@@ -207,7 +207,7 @@ interface SearchResult {
     retentionScore: number;       // R(m)
     combinedScore: number;        // semantic relevance weighted by retention^alpha
     isAssociative: boolean;
-    viaDeepRecall: boolean;
+    viaDeepRecall: boolean;        // from a cold or superseded candidate included by deep recall
 }
 
 interface SearchTrace {
@@ -225,6 +225,8 @@ interface StageTrace {
     completionTokens: number;     // LLM completion tokens used (0 for non-LLM stages)
 }
 ```
+
+When reranking is enabled, the rerank trace stage records the expanded candidate count. For example, `limit: 10` with `rerankFactor: 3` retrieves up to 30 candidates before reranking and returns 10.
 
 ### ScoredMemory
 

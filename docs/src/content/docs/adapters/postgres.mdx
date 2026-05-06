@@ -1,31 +1,19 @@
 ---
 title: Postgres Adapter
-description: Production-grade storage with pgvector for fast similarity search.
+description: TypeScript production storage with pgvector for fast similarity search.
 ---
-
-import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Overview
 
-The Postgres adapter is the recommended choice for production deployments. It uses pgvector for hardware-accelerated vector similarity search, supports concurrent access, and scales to millions of memories.
+The Postgres adapter is the recommended TypeScript choice for production deployments. It uses pgvector for vector similarity search, supports concurrent access, and scales beyond the brute-force local adapters.
 
 ## Installation
 
-<Tabs syncKey="lang">
-  <TabItem label="Python">
-    ```bash
-    pip install cognitive-memory[postgres]
-    # or
-    pip install cognitive-memory psycopg2-binary
-    ```
-  </TabItem>
-  <TabItem label="TypeScript">
-    ```bash
-    npm install cognitive-memory pg
-    ```
-    The `pg` package is a peer dependency — install it alongside the SDK.
-  </TabItem>
-</Tabs>
+```bash
+npm install cognitive-memory pg
+```
+
+The `pg` package is a peer dependency — install it alongside the TypeScript SDK.
 
 ## Setup
 
@@ -43,38 +31,22 @@ CREATE EXTENSION IF NOT EXISTS vector;
 postgresql://user:password@localhost:5432/memories
 ```
 
-<Tabs syncKey="lang">
-  <TabItem label="Python">
-    ```python
-    from cognitive_memory import CognitiveMemory
-    from cognitive_memory.adapters.postgres import PostgresAdapter
+```typescript
+import { CognitiveMemory } from "cognitive-memory";
+import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+import { Pool } from "pg";
 
-    adapter = PostgresAdapter(
-        connection_string="postgresql://user:pass@localhost:5432/memories",
-        embedding_dimensions=1536,
-    )
-    mem = CognitiveMemory(adapter=adapter)
-    ```
-  </TabItem>
-  <TabItem label="TypeScript">
-    ```typescript
-    import { CognitiveMemory } from "cognitive-memory";
-    import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
-    import { Pool } from "pg";
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL!,
+});
+const adapter = new PostgresAdapter({ pool });
 
-    const pool = new Pool({
-        connectionString: process.env.DATABASE_URL!,
-    });
-    const adapter = new PostgresAdapter({ pool });
-
-    const mem = new CognitiveMemory({
-        adapter,
-        embeddingProvider: myEmbedder,
-        userId: "user-123",
-    });
-    ```
-  </TabItem>
-</Tabs>
+const mem = new CognitiveMemory({
+    adapter,
+    embeddingProvider: myEmbedder,
+    userId: "user-123",
+});
+```
 
 ## Schema
 
@@ -86,16 +58,27 @@ CREATE TABLE memories (
     user_id TEXT NOT NULL,
     content TEXT NOT NULL,
     embedding vector(1536),
-    memory_type TEXT NOT NULL DEFAULT 'semantic',
+    category TEXT NOT NULL DEFAULT 'semantic',
     importance REAL NOT NULL DEFAULT 0.5,
     stability REAL NOT NULL DEFAULT 0.3,
     access_count INTEGER DEFAULT 0,
     last_accessed BIGINT,
     retention REAL DEFAULT 1.0,
     metadata JSONB,
+    is_cold BOOLEAN DEFAULT false,
+    cold_since BIGINT,
+    days_at_floor INTEGER DEFAULT 0,
+    is_superseded BOOLEAN DEFAULT false,
+    superseded_by TEXT,
+    is_stub BOOLEAN DEFAULT false,
+    contradicted_by TEXT,
+    semantic_type TEXT DEFAULT 'other',
+    valid_from BIGINT,
+    valid_until BIGINT,
+    ttl_seconds INTEGER,
+    source_turn_ids TEXT[] DEFAULT '{}',
     created_at BIGINT NOT NULL,
-    updated_at BIGINT NOT NULL,
-    tier TEXT DEFAULT 'hot'  -- 'hot', 'cold', 'stub'
+    updated_at BIGINT NOT NULL
 );
 
 CREATE TABLE memory_links (
@@ -112,7 +95,7 @@ CREATE INDEX ON memories USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 -- Query optimization indexes
-CREATE INDEX ON memories (user_id, tier);
+CREATE INDEX ON memories (user_id, is_cold, is_stub);
 CREATE INDEX ON memories (user_id, retention);
 ```
 
@@ -147,10 +130,9 @@ The Postgres adapter supports `search_lexical` / `searchLexical` using PostgreSQ
 
 The Postgres adapter naturally supports multi-tenancy through the `user_id` column. All queries are scoped to the current user:
 
-```python
-# Each user gets their own memory space
-mem_alice = CognitiveMemory(adapter=PostgresAdapter(...), config={"user_id": "alice"})
-mem_bob = CognitiveMemory(adapter=PostgresAdapter(...), config={"user_id": "bob"})
+```typescript
+const memAlice = new CognitiveMemory({ adapter, embeddingProvider, userId: "alice" });
+const memBob = new CognitiveMemory({ adapter, embeddingProvider, userId: "bob" });
 ```
 
 ## Transactions
@@ -158,10 +140,11 @@ mem_bob = CognitiveMemory(adapter=PostgresAdapter(...), config={"user_id": "bob"
 The Postgres adapter supports real transactions:
 
 ```python
-async with adapter.transaction() as txn:
-    await txn.create(memory1)
-    await txn.create(memory2)
-    # Both commit or neither does
+await adapter.transaction(async (txn) => {
+    const id1 = await txn.createMemory(memory1);
+    const id2 = await txn.createMemory(memory2);
+    return [id1, id2];
+});
 ```
 
 ## Connection pooling
@@ -169,11 +152,11 @@ async with adapter.transaction() as txn:
 For production, use connection pooling:
 
 ```python
-adapter = PostgresAdapter(
-    connection_string="postgresql://...",
-    pool_min_size=5,
-    pool_max_size=20,
-)
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL!,
+    max: 20,
+});
+const adapter = new PostgresAdapter({ pool });
 ```
 
 ## When to use
@@ -189,3 +172,4 @@ adapter = PostgresAdapter(
 - Quick prototyping (use InMemory)
 - Serverless functions with cold starts (use Convex)
 - Scenarios where you can't run Postgres
+- Python projects using only the current Python SDK adapters
