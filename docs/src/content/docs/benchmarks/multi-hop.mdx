@@ -25,7 +25,7 @@ Multi-hop is where most memory systems fail. They retrieve the one most similar 
 <HorizontalBarChart client:visible
   data={[
     { system: 'Run H*', accuracy: 59.3 },
-    { system: 'Run F', accuracy: 47.1 },
+    { system: 'Full run', accuracy: 48.5 },
     { system: 'FadeMem', accuracy: 29.4 },
     { system: 'Mem0', accuracy: 28.4 },
     { system: 'Naive RAG', accuracy: 15 },
@@ -39,10 +39,7 @@ Multi-hop is where most memory systems fail. They retrieve the one most similar 
 
 *Run H is conversation 0 only.
 
-Cognitive Memory's multi-hop score beats:
-- Mem0 by **66%** (Run F) / **108%** (Run H)
-- FadeMem by **60%** (Run F) / **102%** (Run H)
-- Naive RAG by **214%** (Run F)
+Cognitive Memory's latest full-run multi-hop score is 48.5% under the stated protocol, compared with Mem0 at 28.4%, FadeMem at 29.4%, and naive RAG at roughly 15%. The conv-0 rerank pilot reaches 59.3%, but it is not a full benchmark run.
 
 ## Why Cognitive Memory wins at multi-hop
 

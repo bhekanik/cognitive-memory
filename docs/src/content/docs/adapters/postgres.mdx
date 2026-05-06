@@ -60,10 +60,12 @@ postgresql://user:password@localhost:5432/memories
     ```typescript
     import { CognitiveMemory } from "cognitive-memory";
     import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+    import { Pool } from "pg";
 
-    const adapter = new PostgresAdapter({
+    const pool = new Pool({
         connectionString: process.env.DATABASE_URL!,
     });
+    const adapter = new PostgresAdapter({ pool });
 
     const mem = new CognitiveMemory({
         adapter,

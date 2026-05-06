@@ -38,7 +38,7 @@ Store a new memory. Generates embedding, initializes cognitive metadata.
 ```typescript
 const id = await mem.store({
     content: "User is allergic to peanuts",
-    memoryType: "semantic",     // default: "semantic"
+    category: "semantic",       // default: "semantic"
     importance: 0.9,            // default: config.defaultImportance
     stability: 0.3,             // default: config.defaultStability
     metadata: { source: "chat" }, // optional
@@ -47,17 +47,18 @@ const id = await mem.store({
 
 Returns the created memory ID.
 
-#### `retrieve(query: RetrievalQuery): Promise<SearchResponse>`
+#### `search(query: RetrievalQuery, llm?: LLMProvider): Promise<SearchResponse>`
 
-Retrieve memories relevant to a query. Combines semantic similarity with retention weighting. Includes associative expansion by default.
+Canonical retrieval API. Combines semantic similarity with retention-weighted scoring, optional deep recall, associative expansion, optional reranking, and retrieval boosting.
 
 ```typescript
-const response = await mem.retrieve({
+const response = await mem.search({
     query: "what is the user allergic to?",
-    limit: 5,                       // default: 5
+    limit: 10,                      // default: 10
     minRetention: 0.2,              // default: config.minRetention
-    memoryTypes: ["semantic"],       // optional filter
+    categories: ["semantic"],        // optional filter
     includeAssociations: true,       // default: true
+    deepRecall: false,               // include cold + superseded, exclude stubs
     trace: false,                    // default: false
 });
 const results = response.results;
@@ -65,11 +66,23 @@ const results = response.results;
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `deepRecall` | `boolean` | `false` | Include cold and superseded records in the candidate set. Stubs stay excluded. |
 | `trace` | `boolean` | `false` | When `true`, the response includes a `trace` field with scoring breakdown and pipeline timing details |
 
-Returns a `SearchResponse` object containing a `results` array of `ScoredMemory` objects sorted by `finalScore` descending, and an optional `trace` field when tracing is enabled.
+Returns a `SearchResponse` object containing a `results` array of `SearchResult` objects sorted by `combinedScore` descending, evidence chains, and an optional `trace` field when tracing is enabled.
 
 Side effects: strengthens retrieved memories (access count, stability, last accessed) and co-retrieval associations.
+
+#### `retrieve(query: RetrievalQuery): Promise<ScoredMemory[]>`
+
+Compatibility wrapper for older callers. It delegates to `search()` and maps each `SearchResult` back to the older `ScoredMemory` shape.
+
+```typescript
+const results = await mem.retrieve({
+    query: "what is the user allergic to?",
+    limit: 5,
+});
+```
 
 #### `get(id: string): Promise<Memory | null>`
 
@@ -85,7 +98,7 @@ Query memories with filters. Strengthens returned memories.
 
 ```typescript
 const memories = await mem.queryMemories({
-    memoryTypes: ["semantic", "episodic"],
+    categories: ["semantic", "episodic"],
     minRetention: 0.5,
     minImportance: 0.3,
     limit: 20,
@@ -109,7 +122,7 @@ const result = await mem.consolidate();
 console.log(`Decayed: ${result.decayed.length}`);
 console.log(`Compressed: ${result.compressed.length} groups`);
 console.log(`Promotion candidates: ${result.promotionCandidates.length}`);
-console.log(`Deleted: ${result.deleted}`);
+console.log(`Converted to stubs: ${result.deleted}`);
 ```
 
 #### `refreshRetentionScores(): Promise<void>`
@@ -140,7 +153,7 @@ interface Memory {
     userId: string;
     content: string;
     embedding: number[];
-    memoryType: MemoryType;      // "episodic" | "semantic" | "procedural"
+    category: MemoryCategory;    // "episodic" | "semantic" | "procedural" | "core"
     importance: number;           // 0.0-1.0
     stability: number;            // 0.0-1.0
     accessCount: number;
@@ -157,7 +170,7 @@ interface Memory {
 ```typescript
 interface MemoryInput {
     content: string;
-    memoryType?: MemoryType;      // default: "semantic"
+    category?: MemoryCategory;    // default: "semantic"
     importance?: number;          // default: config.defaultImportance
     stability?: number;           // default: config.defaultStability
     metadata?: Record<string, unknown>;
@@ -169,10 +182,12 @@ interface MemoryInput {
 ```typescript
 interface RetrievalQuery {
     query: string;
-    limit?: number;               // default: 5
+    limit?: number;               // default: 10 for search(), 5 for retrieve()
     minRetention?: number;        // default: config.minRetention
-    memoryTypes?: MemoryType[];
+    categories?: MemoryCategory[];
     includeAssociations?: boolean; // default: true
+    deepRecall?: boolean;         // default: false
+    sessionId?: string;
     trace?: boolean;              // default: false
 }
 ```
@@ -181,8 +196,18 @@ interface RetrievalQuery {
 
 ```typescript
 interface SearchResponse {
-    results: ScoredMemory[];
+    results: SearchResult[];
+    evidenceChains: string[][];
     trace?: SearchTrace;          // present when trace=true
+}
+
+interface SearchResult {
+    memory: Memory;
+    relevanceScore: number;       // cosine similarity
+    retentionScore: number;       // R(m)
+    combinedScore: number;        // semantic relevance weighted by retention^alpha
+    isAssociative: boolean;
+    viaDeepRecall: boolean;
 }
 
 interface SearchTrace {
@@ -206,7 +231,7 @@ interface StageTrace {
 ```typescript
 interface ScoredMemory extends Memory {
     relevanceScore: number;       // cosine similarity
-    finalScore: number;           // relevance * retention
+    finalScore: number;           // compatibility alias for combinedScore
 }
 ```
 
@@ -270,7 +295,7 @@ interface EmbeddingProvider {
 ```typescript
 interface MemoryFilters {
     userId?: string;
-    memoryTypes?: MemoryType[];
+    categories?: MemoryCategory[];
     minRetention?: number;
     minImportance?: number;
     createdAfter?: number;        // timestamp
@@ -314,9 +339,9 @@ Compute cosine similarity between two vectors.
 
 Heuristic importance scoring based on text content.
 
-### `categorizeMemoryType(text: string): MemoryType`
+### `categorizeMemoryType(text: string): MemoryCategory`
 
-Heuristic memory type classification.
+Heuristic memory category classification.
 
 ### `extractTopics(text: string, maxTopics?: number): string[]`
 

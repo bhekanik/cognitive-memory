@@ -9,8 +9,8 @@ import GroupedBarChart from '../../../components/charts/GroupedBarChart';
 
 <GroupedBarChart client:visible
   data={[
-    { metric: 'Overall', cogMem: 42.4, fadeMem: 27.2 },
-    { metric: 'Multi-hop', cogMem: 47.1, fadeMem: 29.4 },
+    { metric: 'Overall', cogMem: 44.8, fadeMem: 27.2 },
+    { metric: 'Multi-hop', cogMem: 48.5, fadeMem: 29.4 },
   ]}
   xKey="metric"
   bars={[
@@ -97,4 +97,4 @@ Results are comparable (within noise), confirming our evaluation methodology is 
 - FadeMem results are from their published paper
 - We replicated their settings in our framework (Run B) for verification
 - Both systems use the same LoCoMo dataset and evaluation protocol
-- The comparison is between FadeMem's published numbers and our Run F (best full-10-conv result)
+- The comparison is between FadeMem's published numbers and our latest full-run result

@@ -1,13 +1,13 @@
 ---
 title: Deep Recall
-description: Searching superseded memories to recover information lost during consolidation.
+description: Searching cold and superseded memories to recover details that normal search intentionally hides.
 ---
 
 ## What is deep recall?
 
-Deep recall is an optional search mode that includes superseded memories in the result set. Superseded memories are originals that were compressed into a consolidation summary — they're normally excluded from search.
+Deep recall is an optional search mode that includes cold and superseded memories in the candidate set. Normal search excludes cold, superseded, and stub records; deep recall includes cold and superseded records while still excluding stubs.
 
-When deep recall is enabled, these originals are brought back into the candidate pool at a 0.5 penalty, allowing the system to recover specific details that might have been lost during summarization.
+When deep recall is enabled, those hidden records are brought back into the candidate pool at a 0.5 penalty, allowing the system to recover specific details that might have been lost during summarization or cold migration.
 
 ## Why it matters
 
@@ -28,10 +28,10 @@ The summary captures the gist but loses specific locations, dates, and details. 
 ### Python
 
 ```python
-# Normal search (excludes superseded memories)
+# Normal search (excludes cold, superseded, and stub records)
 results = await mem.search("rock climbing gym")
 
-# Deep recall (includes superseded originals at 0.5 penalty)
+# Deep recall (includes cold + superseded records at 0.5 penalty; stubs excluded)
 results = await mem.search("rock climbing gym", deep_recall=True)
 
 # Each result indicates if it came from deep recall
@@ -56,9 +56,9 @@ The penalty prevents superseded originals from drowning out their own summaries.
 
 ## Where superseded originals live
 
-Superseded originals are moved to cold storage immediately after consolidation. They retain their embeddings, so they can still be scored by cosine similarity when deep recall is enabled.
+Superseded originals are moved to cold storage immediately after consolidation. Deep recall asks the adapter to include both cold and superseded records in the direct candidate set, while stubs remain excluded.
 
-During deep recall search, the adapter is asked to `include_superseded=True`, which searches across both active and superseded memories in the hot store. (Note: originals in cold storage are accessed through association links from the summary memory.)
+During deep recall search, the adapter is asked to use `include_superseded=True`, `include_cold=True`, and `include_stubs=False`.
 
 ## The consolidation-to-deep-recall link
 

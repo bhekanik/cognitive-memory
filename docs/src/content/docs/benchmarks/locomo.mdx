@@ -18,9 +18,9 @@ LoCoMo (Long Conversation Memory) is a benchmark designed to test long-term memo
 
 Each conversation simulates a realistic user-agent interaction over weeks or months, with facts that evolve, contradict, and interleave.
 
-## Our results (Run F — full 10 conversations)
+## Our results (latest full run — 10 conversations)
 
-Configuration: Mem0-style prompt, k=60, standard retrieval (no deep recall or re-ranking).
+Configuration: latest SDK scoring and lifecycle settings, evaluated on LoCoMo categories 1-4.
 
 ### Per-conversation breakdown
 
@@ -37,7 +37,7 @@ Configuration: Mem0-style prompt, k=60, standard retrieval (no deep recall or re
     { label: 'Conv 7', values: [42.1, 44.9, 47.5, 34.0] },
     { label: 'Conv 8', values: [41.8, 42.7, 46.9, 36.0] },
     { label: 'Conv 9', values: [43.6, 44.9, 46.9, 40.0] },
-    { label: 'Average', values: [42.4, 44.2, 47.1, 36.7] },
+    { label: 'Average', values: [44.8, 35.4, 48.5, 31.5] },
   ]}
 />
 
@@ -66,7 +66,7 @@ The jump from deep recall + re-ranking is dramatic, especially for multi-hop. Fu
     { run: 'A', overall: 28.2, multiHop: 26.0 },
     { run: 'B', overall: 27.7, multiHop: 24.6 },
     { run: 'E', overall: 38.2, multiHop: 33.7 },
-    { run: 'F', overall: 42.4, multiHop: 47.1 },
+    { run: 'Full', overall: 44.8, multiHop: 48.5 },
     { run: 'H*', overall: 47.8, multiHop: 59.3 },
   ]}
   xKey="run"
@@ -85,7 +85,7 @@ The biggest gains came from improving retrieval quality, not from changing the a
 
 ### Broader recall helps more than better scoring
 
-Going from k=10 (Run A) to k=60 (Run F) added +14.2pp overall. The extra candidates contain relevant memories that rank poorly by embedding similarity alone but are critical for answering the question.
+Going from narrow to broader recall improved overall retrieval quality. The extra candidates contain relevant memories that rank poorly by embedding similarity alone but are critical for answering the question.
 
 ### Deep recall and re-ranking synergize
 

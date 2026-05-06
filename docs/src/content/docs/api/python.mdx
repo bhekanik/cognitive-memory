@@ -208,7 +208,7 @@ from cognitive_memory import SearchResult
 | `memory` | `Memory` | The matched memory |
 | `relevance_score` | `float` | Cosine similarity to query |
 | `retention_score` | `float` | R(m) from decay model |
-| `combined_score` | `float` | relevance * retention^alpha |
+| `combined_score` | `float` | Semantic relevance weighted by retention^alpha |
 | `is_associative` | `bool` | Came via association link |
 | `via_deep_recall` | `bool` | From superseded memory |
 

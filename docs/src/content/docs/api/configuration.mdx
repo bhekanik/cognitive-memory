@@ -122,6 +122,7 @@ The base decay rates and floors are defined as module-level constants:
 |-----------|------|:-------:|-------------|
 | `rerank_enabled` | `bool` | `False` | Enable LLM reranking of top candidates |
 | `k_rerank` | `int` | `10` | Number of top candidates to send to LLM for reranking |
+| `rerank_factor` | `int` | `1` | Multiplier for the retrieval candidate pool before reranking; final results are sliced back to requested `top_k` |
 | `rerank_model` | `str \| None` | `None` | Model for reranking; defaults to extraction model if not set |
 
 ### Extraction
@@ -191,6 +192,7 @@ The TypeScript SDK exposes the same parameters as Python, using camelCase naming
 | `minBridgeEdgeWeight` | `number` | `0.3` | Minimum edge weight for bridge path traversal |
 | `rerankEnabled` | `boolean` | `false` | Enable LLM reranking of top candidates |
 | `kRerank` | `number` | `10` | Number of top candidates to send to LLM for reranking |
+| `rerankFactor` | `number` | `1` | Multiplier for the retrieval candidate pool before reranking; final results are sliced back to requested `limit` |
 | `rerankModel` | `string \| null` | `null` | Model for reranking; defaults to extraction model if not set |
 | `extractionMode` | `string` | `"semantic"` | `"raw"`, `"semantic"`, or `"hybrid"` |
 | `extractionModel` | `string` | `"gpt-4o-mini"` | LLM for extraction |

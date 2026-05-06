@@ -32,7 +32,7 @@ const mem = new CognitiveMemory({
     userId: "user-123",
 });
 
-await mem.store({ content: "User likes coffee", memoryType: "semantic" });
+await mem.store({ content: "User likes coffee", category: "semantic" });
 ```
 
 ## File format
@@ -40,8 +40,8 @@ await mem.store({ content: "User likes coffee", memoryType: "semantic" });
 Each line is a self-contained JSON object representing the current state of a memory:
 
 ```jsonl
-{"id":"abc-123","userId":"user-123","content":"User likes coffee","memoryType":"semantic","importance":0.5,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.1,0.2,...]}
-{"id":"def-456","userId":"user-123","content":"User is from Portland","memoryType":"semantic","importance":0.7,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.3,0.4,...]}
+{"id":"abc-123","userId":"user-123","content":"User likes coffee","category":"semantic","importance":0.5,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.1,0.2,...]}
+{"id":"def-456","userId":"user-123","content":"User is from Portland","category":"semantic","importance":0.7,"stability":0.3,"accessCount":0,"lastAccessed":1709856000000,"retention":1.0,"createdAt":1709856000000,"updatedAt":1709856000000,"embedding":[0.3,0.4,...]}
 ```
 
 ## How it works
@@ -71,7 +71,7 @@ Brute-force cosine similarity over the in-memory map, identical to the InMemory 
 tail -f memories.jsonl | jq .content
 
 # Count memories by type
-cat memories.jsonl | jq -r .memoryType | sort | uniq -c
+cat memories.jsonl | jq -r .category | sort | uniq -c
 
 # Find high-importance memories
 cat memories.jsonl | jq 'select(.importance > 0.8)'

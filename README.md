@@ -8,7 +8,9 @@
 
 Memory that behaves like memory. Cognitive Memory models how humans actually remember — important things stick, irrelevant things fade, and contradictions get resolved. Built for AI agents that need long-term memory across conversations.
 
-**Benchmark highlight:** 47.1% multi-hop accuracy on [LoCoMo](https://github.com/snap-research/locomo) — 66% ahead of Mem0.
+**Benchmark highlights:** 48.5% multi-hop F1 on [LoCoMo](https://github.com/snap-research/locomo) — 1.7× Mem0's 28.4%. 70.2% task-averaged accuracy on [LongMemEval-S](https://github.com/xiaowu0162/LongMemEval), competitive with ENGRAM-class single-stage memory systems. 100% critical-fact retention on a controlled 30-day long-term-interaction benchmark.
+
+Benchmark methodology and caveats live in the [benchmark repo](https://github.com/planetaryescape/cognitive-memory-benchmarks).
 
 ## Install
 
@@ -69,12 +71,13 @@ for (const r of results) {
 
 ## Key Features
 
-- **Decay model** — Memories fade over time following a power-law curve (`R^alpha`), just like human memory. Frequently accessed memories decay slower.
+- **Retention dynamics** — Memories decay over time, but floors, stability, and reinforcement keep important memories available.
+- **Accessibility scoring** — Retrieval uses `similarity × R^alpha`, so faded but relevant memories can still surface.
 - **Core promotion** — Important or repeatedly accessed memories get promoted to "core" status with a high retention floor (0.60), making them near-permanent.
 - **Associations** — Memories automatically form weighted links to related memories, enabling graph-based traversal and richer recall.
-- **Tiered storage** — Hot, cold, and stub tiers. Active memories stay hot. Stale memories migrate to cold storage. Superseded memories become lightweight stubs.
-- **Deep recall** — Retrieve superseded and cold memories at a relevance penalty, so nothing is truly lost.
-- **Adapters** — Pluggable storage backends. Ship with SQLite, PostgreSQL, and in-memory adapters. Bring your own by implementing the adapter interface.
+- **Tiered storage** — Hot, cold, and stub tiers. Active memories stay hot. Stale or superseded memories migrate to cold storage, and very old cold records can become lightweight stubs after TTL expiry.
+- **Deep recall** — Retrieve superseded and cold memories at a relevance penalty, keeping archived context available when you explicitly ask for it.
+- **Adapters** — Pluggable storage backends. Ships with in-memory adapters, TypeScript Postgres/JSONL/Convex adapters, and adapter interfaces for custom backends.
 
 ## Docs
 

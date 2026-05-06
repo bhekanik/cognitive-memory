@@ -26,7 +26,11 @@ for r in response.results:
     print(r.memory.content, f"(score: {r.combined_score:.2f})")
 ```
 
-For production, use OpenAI embeddings (set `OPENAI_API_KEY`):
+For production, install the OpenAI extra and set `OPENAI_API_KEY`:
+
+```bash
+pip install "cognitive-memory[openai]"
+```
 
 ```python
 from cognitive_memory import CognitiveMemory

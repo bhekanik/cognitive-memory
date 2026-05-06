@@ -89,7 +89,7 @@ await mem.add(
 The TypeScript SDK uses a slightly simplified type system:
 
 ```typescript
-type MemoryType = "episodic" | "semantic" | "procedural";
+type MemoryCategory = "core" | "semantic" | "episodic" | "procedural";
 ```
 
 Core memory behavior in TypeScript is handled through stability thresholds and metadata rather than a separate type. The decay rates map directly:

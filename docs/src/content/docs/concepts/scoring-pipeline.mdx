@@ -7,7 +7,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Overview
 
-When you call `search()` or `retrieve()`, the query goes through a multi-stage pipeline that combines vector similarity, temporal decay, associative expansion, and retrieval boosting to produce a ranked list of memories.
+When you call `search()`, the query goes through a multi-stage pipeline that combines vector similarity, temporal decay, associative expansion, and retrieval boosting to produce a ranked list of memories. `retrieve()` is a compatibility wrapper over the same pipeline.
 
 ## The six stages
 
@@ -17,12 +17,15 @@ The query text is embedded, and the hot store is searched for the top candidates
 
 ```python
 candidates = await self.adapter.search_similar(
-    query_embedding, top_k=top_k * 3,
+    query_embedding,
+    top_k=top_k * rerank_factor,
     include_superseded=deep_recall,
+    include_cold=deep_recall,
+    include_stubs=False,
 )
 ```
 
-The search requests 3x the desired result count to ensure enough candidates survive scoring and filtering.
+When reranking is enabled, the search can request `top_k * rerank_factor` candidates before slicing back to the requested `top_k`.
 
 ### Stage 1b: Lexical/BM25 search (v6, when hybrid enabled)
 
@@ -60,7 +63,7 @@ Candidates with semantic type `plan` or `transient_state` whose validity window 
 
 ### Stage 2c: LLM reranking (optional)
 
-When `rerank_enabled` / `rerankEnabled` is `True` and an LLM provider is available, the top `k_rerank` candidates (default 10) from Stage 2/2b are sent to the LLM for relevance reranking. The LLM re-scores each candidate against the original query, and candidates are re-sorted by the LLM-assigned scores. This can significantly improve precision for ambiguous or nuanced queries at the cost of additional latency and token usage. The model used defaults to the configured extraction model unless `rerank_model` / `rerankModel` is set explicitly.
+When `rerank_enabled` / `rerankEnabled` is `True` and an LLM provider is available, the engine retrieves an expanded candidate pool (`top_k * rerank_factor`, with `k_rerank` as a floor), sends those candidates to the LLM, then returns the requested `top_k`. This can improve precision for ambiguous or nuanced queries at the cost of additional latency and token usage. The model used defaults to the configured extraction model unless `rerank_model` / `rerankModel` is set explicitly.
 
 ### Stage 3: Associative expansion
 
@@ -166,13 +169,18 @@ In v6, `search()` returns a **`SearchResponse`** wrapper instead of a bare list.
   <TabItem label="TypeScript">
     ```typescript
     interface SearchResponse {
-        results: ScoredMemory[];
-        trace: SearchTrace;
+        results: SearchResult[];
+        evidenceChains: string[][];
+        trace?: SearchTrace;
     }
 
-    interface ScoredMemory extends Memory {
+    interface SearchResult {
+        memory: Memory;
         relevanceScore: number;
-        finalScore: number;
+        retentionScore: number;
+        combinedScore: number;
+        isAssociative: boolean;
+        viaDeepRecall: boolean;
     }
 
     interface SearchTrace {

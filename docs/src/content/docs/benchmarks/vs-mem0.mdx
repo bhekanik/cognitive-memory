@@ -9,9 +9,9 @@ import GroupedBarChart from '../../../components/charts/GroupedBarChart';
 
 <GroupedBarChart client:visible
   data={[
-    { metric: 'Overall', cogMem: 42.4, mem0: 26.3 },
-    { metric: 'Multi-hop', cogMem: 47.1, mem0: 28.4 },
-    { metric: 'Single-hop', cogMem: 44.2, mem0: 28.1 },
+    { metric: 'Overall', cogMem: 44.8, mem0: 26.3 },
+    { metric: 'Multi-hop', cogMem: 48.5, mem0: 28.4 },
+    { metric: 'Single-hop', cogMem: 35.4, mem0: 28.1 },
   ]}
   xKey="metric"
   bars={[
@@ -70,7 +70,7 @@ When memories are consolidated in Cognitive Memory, the originals remain accessi
 
 ## Why the multi-hop gap is so large
 
-The 18.7pp multi-hop gap (+66%) is the most significant result. Multi-hop questions are the exact scenario where associative linking and deep recall provide value:
+The 20.5pp multi-hop gap is the most significant result. Multi-hop questions are the exact scenario where associative linking and deep recall provide value:
 
 - **Association path:** Q: "What sport does Alex's colleague play?" -> retrieves "Alex works with Maria" -> association activates "Maria plays tennis"
 - **Mem0 limitation:** The query embedding is close to "Alex" and "colleague" and "sport" but distant from "Maria" and "tennis." Mem0 retrieves the Alex memory but misses the Maria memory.
@@ -80,7 +80,7 @@ The 18.7pp multi-hop gap (+66%) is the most significant result. Multi-hop questi
 - Both systems use the same extraction LLM (gpt-4o-mini)
 - Both use the same embedding model (text-embedding-3-small)
 - Mem0 results are from their published benchmarks on the same LoCoMo dataset
-- Cognitive Memory Run F uses Mem0's prompt style (verbose, k=60) for a fairer comparison
+- Cognitive Memory uses the latest full-run protocol and reports token F1 by question type
 - Answer evaluation uses the same LLM-as-judge methodology
 
 ## What Mem0 does well

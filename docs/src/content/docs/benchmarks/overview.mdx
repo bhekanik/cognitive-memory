@@ -12,7 +12,7 @@ Cognitive Memory was benchmarked against three baselines on the LoCoMo long-conv
 
 <GroupedBarChart client:visible
   data={[
-    { system: 'Cognitive Memory', overall: 42.4, multiHop: 47.1 },
+    { system: 'Cognitive Memory', overall: 44.8, multiHop: 48.5 },
     { system: 'Mem0', overall: 26.3, multiHop: 28.4 },
     { system: 'FadeMem', overall: 27.2, multiHop: 29.4 },
     { system: 'Naive RAG', overall: 20, multiHop: 15 },
@@ -32,7 +32,7 @@ Cognitive Memory was benchmarked against three baselines on the LoCoMo long-conv
 
 **Multi-hop accuracy** measures questions that require combining information from multiple stored memories. These are the hardest questions — and the ones where memory architecture matters most.
 
-## Why Cognitive Memory wins
+## Where Cognitive Memory is strongest
 
 Three mechanisms drive the performance advantage:
 
@@ -57,7 +57,7 @@ We ran multiple configurations to isolate the contribution of each mechanism:
     { run: 'A', overall: 28.2, multiHop: 26.0 },
     { run: 'B', overall: 27.7, multiHop: 24.6 },
     { run: 'E', overall: 38.2, multiHop: 33.7 },
-    { run: 'F', overall: 42.4, multiHop: 47.1 },
+    { run: 'Full', overall: 44.8, multiHop: 48.5 },
     { run: 'H*', overall: 47.8, multiHop: 59.3 },
   ]}
   xKey="run"
@@ -72,8 +72,8 @@ We ran multiple configurations to isolate the contribution of each mechanism:
 
 Each jump tells a story:
 - A to E: tuned prompt and deep recall add +10pp overall
-- E to F: broader recall (k=60) and Mem0-style prompt add +4.2pp
-- F to H: LLM re-ranking adds +5.4pp overall and +12.2pp multi-hop
+- E to Full: broader recall, lifecycle scoring, and aligned prompt changes produce the latest full-set result
+- Full to H: LLM re-ranking on the conv-0 pilot shows the upside of larger candidate pools
 
 See [Methodology](/benchmarks/methodology/) for how we run these benchmarks.
 

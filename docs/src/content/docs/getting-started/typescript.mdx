@@ -83,10 +83,10 @@ const type = categorizeMemoryType("I went to the store yesterday");
 
 ## Retrieval with associations
 
-By default, retrieval includes associatively linked memories:
+By default, `search()` includes associatively linked memories. Use `retrieve()` only when you need the older `ScoredMemory[]` compatibility shape.
 
 ```typescript
-const results = await mem.retrieve({
+const { results } = await mem.search({
   query: "coffee preferences",
   limit: 5,
   includeAssociations: true, // default
@@ -99,7 +99,7 @@ Each result includes scoring metadata:
 ```typescript
 interface ScoredMemory extends Memory {
   relevanceScore: number;  // cosine similarity to query
-  finalScore: number;      // relevance * retention
+  finalScore: number;      // compatibility alias for combined score
 }
 ```
 
@@ -115,22 +115,24 @@ Links are also created automatically when memories are co-retrieved — this is 
 
 ## Consolidation
 
-Run consolidation periodically to compress fading memories and clean up stale data:
+Run maintenance periodically to migrate cold memories, resolve queued conflicts, convert expired cold records to stubs, and consolidate fading clusters:
 
 ```typescript
+await mem.tick();
+
 const result = await mem.consolidate();
 
 console.log(`Decayed: ${result.decayed.length}`);
 console.log(`Compressed: ${result.compressed.length} groups`);
 console.log(`Promotion candidates: ${result.promotionCandidates.length}`);
-console.log(`Deleted: ${result.deleted}`);
+console.log(`Converted to stubs: ${result.deleted}`);
 ```
 
 Consolidation does four things:
 1. Identifies fading memories (retention < 0.2)
 2. Groups similar fading memories by topic
 3. Compresses groups of 5+ into summaries, superseding originals
-4. Deletes very faded memories (retention < 0.05, 30+ days stale)
+4. Preserves originals in cold storage; very old cold records can later become lightweight stubs
 
 ## Choosing an adapter
 
@@ -138,6 +140,7 @@ Consolidation does four things:
 import { InMemoryAdapter } from "cognitive-memory";
 import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
 import { JsonlFileAdapter } from "cognitive-memory/adapters/jsonl";
+import { Pool } from "pg";
 
 // In-memory (testing, prototyping)
 const mem1 = new CognitiveMemory({
@@ -148,7 +151,9 @@ const mem1 = new CognitiveMemory({
 
 // Postgres with pgvector (production)
 const mem2 = new CognitiveMemory({
-  adapter: new PostgresAdapter({ connectionString: process.env.DATABASE_URL }),
+  adapter: new PostgresAdapter({
+    pool: new Pool({ connectionString: process.env.DATABASE_URL }),
+  }),
   embeddingProvider,
   userId: "user-1",
 });

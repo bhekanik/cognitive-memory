@@ -45,7 +45,7 @@ Cognitive Memory brings these dynamics to AI agents. The result: agents that nat
 
 <CardGrid>
   <Card title="Ebbinghaus Decay" icon="down-caret">
-    Memories fade on a forgetting curve. Episodic memories (events) decay in ~30 days. Semantic memories (facts) last ~90 days. Procedural memories (skills) never decay. Core memories have a 0.60 retention floor — they dim but never disappear.
+    Memories fade on a forgetting curve. Episodic memories decay faster than semantic memories. Procedural memories do not decay. Core memories have a 0.60 retention floor, so they stay highly accessible.
   </Card>
   <Card title="Retrieval Strengthening" icon="up-caret">
     Every time a memory is retrieved, its stability increases. Spaced repetition matters: retrieving after a longer gap produces a bigger stability boost. Memories that are accessed frequently become harder to forget.
@@ -91,9 +91,9 @@ Cognitive Memory brings these dynamics to AI agents. The result: agents that nat
       userId: "user-123",
     });
 
-    await mem.store({ content: "User is allergic to peanuts", memoryType: "semantic" });
+    await mem.store({ content: "User is allergic to peanuts", category: "semantic" });
 
-    const results = await mem.retrieve({ query: "allergies" });
+    const { results } = await mem.search({ query: "allergies" });
     ```
   </TabItem>
 </Tabs>
@@ -109,7 +109,7 @@ On the LoCoMo long-conversation benchmark (10 conversations, 1540 questions):
 <GroupedBarChart
   client:visible
   data={[
-    { system: 'Cognitive Memory', overall: 42.4, multiHop: 47.1 },
+    { system: 'Cognitive Memory', overall: 44.8, multiHop: 48.5 },
     { system: 'Mem0', overall: 26.3, multiHop: 28.4 },
     { system: 'FadeMem', overall: 27.2, multiHop: 29.4 },
     { system: 'Naive RAG', overall: 20, multiHop: 15 },
@@ -124,7 +124,7 @@ On the LoCoMo long-conversation benchmark (10 conversations, 1540 questions):
   highlightFirst={true}
 />
 
-Multi-hop questions require reasoning across multiple stored facts. This is where decay-weighted retrieval and associative linking shine — our multi-hop score beats Mem0 by 66% and FadeMem by 60%.
+Multi-hop questions require reasoning across multiple stored facts. This is where decay-weighted retrieval and associative linking help most: Cognitive Memory reaches 48.5% multi-hop F1 compared with Mem0's 28.4% and FadeMem's 29.4% under the stated protocol.
 
 <CardGrid>
   <Card title="Python SDK" icon="document">

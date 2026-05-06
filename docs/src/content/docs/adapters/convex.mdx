@@ -77,7 +77,7 @@ export default defineSchema({
         userId: v.string(),
         content: v.string(),
         embedding: v.array(v.float64()),
-        memoryType: v.string(),
+        category: v.string(),
         importance: v.float64(),
         stability: v.float64(),
         accessCount: v.int64(),
@@ -90,7 +90,7 @@ export default defineSchema({
     .vectorIndex("by_embedding", {
         vectorField: "embedding",
         dimensions: 1536,
-        filterFields: ["userId", "memoryType"],
+        filterFields: ["userId", "category"],
     }),
 
     memory_links: defineTable({

@@ -40,9 +40,12 @@ For production, use `OpenAIEmbeddingProvider` and `PostgresAdapter`:
 ```typescript
 import { OpenAIEmbeddingProvider } from "cognitive-memory";
 import { PostgresAdapter } from "cognitive-memory/adapters/postgres";
+import { Pool } from "pg";
 
 const mem = new CognitiveMemory({
-  adapter: new PostgresAdapter({ connectionString: process.env.DATABASE_URL }),
+  adapter: new PostgresAdapter({
+    pool: new Pool({ connectionString: process.env.DATABASE_URL }),
+  }),
   embeddingProvider: new OpenAIEmbeddingProvider({ apiKey: process.env.OPENAI_API_KEY }),
   userId: "user-1",
 });
