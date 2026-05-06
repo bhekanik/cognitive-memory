@@ -1,6 +1,6 @@
 ---
 title: Cognitive Memory
-description: A research-grade memory layer for AI agents — decay floors, emergent core promotion, reversible consolidation. Python and TypeScript SDKs.
+description: Memory layer for AI agents. Decay floors, emergent core promotion, reversible consolidation. Python and TypeScript SDKs.
 template: splash
 hero:
   tagline: ""
@@ -9,7 +9,6 @@ hero:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import Figure from '../../components/Figure.astro';
-import PullQuote from '../../components/PullQuote.astro';
 import PillRow from '../../components/PillRow.astro';
 import CommitmentTable from '../../components/CommitmentTable.astro';
 import MemoryLifecycle from '../../components/animations/MemoryLifecycle.astro';
@@ -17,11 +16,24 @@ import DecayCurve from '../../components/animations/DecayCurve.astro';
 import PipelineDiagram from '../../components/animations/PipelineDiagram.astro';
 
 <section>
-<span class="section-marker">§ The opening</span>
+<span class="section-marker">§ The problem</span>
 
-A user asks an assistant: *which day was the beach plan?* The system has the trip. It has Tampa. It has Sarah. It has Thursday. None of it surfaces. The data is present; the right fact lost the retrieval competition.
+## Retrieval is not memory.
 
-This started in a real product (a chat app I built) and turned into the unsettling realisation that retrieval is not memory. Context windows are not memory either. What's missing is the middle.
+Vector search gets you the closest match. It doesn't tell you what's *important*, what's *current*, or what should *fade*. Old facts compete with fresh ones. Trivial chatter outranks the allergy you mentioned six months ago.
+
+Cognitive Memory is the missing middle: what happens to a memory after it's stored and before it's retrieved.
+
+</section>
+
+<section>
+<span class="section-marker">§ Evidence</span>
+
+<PillRow pills={[
+  { num: "48.5%", label: "multi-hop F1 on LoCoMo", qual: "1540 QA · LLM-as-judge" },
+  { num: "70.2%", label: "task-averaged on LongMemEval-S", qual: "comparable to ENGRAM-class systems" },
+  { num: "100%",  label: "critical-fact retention on LTI-Bench v2", qual: "controlled 30-day, 42 probes" }
+]} />
 
 </section>
 
@@ -30,40 +42,23 @@ This started in a real product (a chat app I built) and turned into the unsettli
 
 ### 01. Memory is a lifecycle.
 
-Memories are written, maintained, retrieved, used, revised, and sometimes deliberately made harder to access. The lifecycle has design surface — and most of it is open.
+Write, maintain, retrieve, reinforce, fade, consolidate. Each stage has knobs.
 
-<Figure number="1" caption="Six stages: extraction, embedding, storage, decay, retrieval, consolidation. Each stage has knobs.">
+<Figure number="1" caption="The lifecycle of a memory.">
   <MemoryLifecycle />
 </Figure>
 
-### 02. Availability is not the same as accessibility.
+### 02. Forgetting is control.
 
-Tulving's distinction from cognitive science. A memory can exist in storage and still be practically forgotten because ranking never surfaces it. We keep them separate: every memory has a retention score; ranking blends similarity with retention rather than collapsing them.
+Memories fade — but never to zero. The 0.02 floor keeps a six-month-old fact recoverable when the right cue arrives. Core memories floor at 0.60 and stay strong.
 
-<PullQuote cite="Tulving & Pearlstone, 1966">
-A memory can be unavailable for retrieval without being erased.
-</PullQuote>
-
-### 03. Forgetting is control, not data loss.
-
-Nothing gets deleted. Memories fade — but never to zero. The 0.02 floor keeps a six-month-old fact recoverable when the right cue arrives. Core memories floor at 0.60 and stay strongly available across months of disuse.
-
-<Figure number="2" caption="Retention over 180 days. Both floors are explicit — regular memories never reach zero, core memories stay above 0.60.">
+<Figure number="2" caption="Retention over 180 days. Both floors are explicit.">
   <DecayCurve />
 </Figure>
 
-</section>
+### 03. Important earns it.
 
-<section>
-<span class="section-marker">§ Evidence</span>
-
-<PillRow pills={[
-  { num: "48.5%", label: "multi-hop F1 on LoCoMo", qual: "1540 QA · LLM-as-judge · 10 conversations" },
-  { num: "70.2%", label: "task-averaged accuracy on LongMemEval-S", qual: "500 q · comparable to ENGRAM-class single-stage systems" },
-  { num: "100%",  label: "critical-fact retention on LTI-Bench v2", qual: "controlled 30-day · 42 probes · synthetic interaction" }
-]} />
-
-Different memory systems advance different parts of the lifecycle. These numbers say the architectural design — decay floors, emergent core promotion, reversible consolidation — performs competitively without being tuned to a leaderboard. Full methodology and per-run artifacts live in the [benchmark repository](https://github.com/planetaryescape/cognitive-memory-benchmarks).
+Memories aren't just tagged at extraction. They earn protected status by being accessed often, across multiple sessions, with high stability. Use proves importance.
 
 </section>
 
@@ -73,51 +68,13 @@ Different memory systems advance different parts of the lifecycle. These numbers
 ## Six design commitments.
 
 <CommitmentTable rows={[
-  {
-    num: "01",
-    title: "Decay floors.",
-    body: "Memories fade according to an Ebbinghaus-inspired curve. They never reach zero.",
-    spec: "<code>R = max(floor, exp(-Δt / (S·B·β_c)))</code><br>floor: 0.02 regular · 0.60 core",
-    accent: "purple"
-  },
-  {
-    num: "02",
-    title: "Emergent core promotion.",
-    body: "Important memories aren't only tagged at extraction. They earn protected status through use.",
-    spec: "<code>access ≥ 10 ∧ stability ≥ 0.85 ∧ sessions ≥ 3</code>",
-    accent: "cyan"
-  },
-  {
-    num: "03",
-    title: "Two-tier retrieval boosting.",
-    body: "Direct retrieval reinforces more than associative co-retrieval. Same search, different reinforcement.",
-    spec: "direct +0.10 stability · associative +0.03",
-    accent: "green"
-  },
-  {
-    num: "04",
-    title: "Bidirectional weighted associations.",
-    body: "Memories that arrive together get linked. So do memories that surface together. Links decay too.",
-    spec: "<code>τ = 90 days · cutoff 0.30</code>",
-    accent: "orange"
-  },
-  {
-    num: "05",
-    title: "Hot / cold / stub tiering.",
-    body: "Storage tiers. The hot index converges to ~7–11% of total memories under realistic load.",
-    spec: "7 days at floor → cold<br>180 days cold → stub",
-    accent: "pink"
-  },
-  {
-    num: "06",
-    title: "Reversible consolidation.",
-    body: "Clusters of fading memories get summarised. The originals stay in cold storage with backlinks. Nothing is destroyed.",
-    spec: "retention &lt; 0.20 · ≥ 5 memories · cosine ≥ 0.70",
-    accent: "purple"
-  }
+  { num: "01", title: "Decay floors.",                       body: "Memories fade on an Ebbinghaus-inspired curve. They never reach zero.",                                                  spec: "<code>R = max(floor, exp(-Δt / (S·B·β_c)))</code><br>floor: 0.02 regular · 0.60 core",     accent: "purple" },
+  { num: "02", title: "Emergent core promotion.",            body: "Use proves importance. Repeated access across sessions earns a 0.60 floor.",                                              spec: "<code>access ≥ 10 ∧ stability ≥ 0.85 ∧ sessions ≥ 3</code>",                              accent: "cyan" },
+  { num: "03", title: "Two-tier retrieval boosting.",        body: "Direct hits reinforce more than associative pull-ins. Active recall vs priming.",                                        spec: "direct +0.10 · associative +0.03",                                                          accent: "green" },
+  { num: "04", title: "Bidirectional weighted associations.", body: "Memories that arrive together get linked. Memories that surface together get strengthened. Links decay too.",            spec: "<code>τ = 90 days · cutoff 0.30</code>",                                                  accent: "orange" },
+  { num: "05", title: "Hot / cold / stub tiering.",          body: "The hot index converges to 7–11% of total memories. Cold storage is reachable through deep recall.",                     spec: "7 days at floor → cold<br>180 days cold → stub",                                          accent: "pink" },
+  { num: "06", title: "Reversible consolidation.",           body: "Clusters of fading memories get summarised. Originals stay in cold storage with backlinks. Nothing is destroyed.",        spec: "retention &lt; 0.20 · ≥ 5 memories · cosine ≥ 0.70",                                       accent: "purple" }
 ]} />
-
-Drawing on Ebbinghaus and Tulving — not as a biology spec, but as engineering vocabulary for forgetting, reactivation, and consolidation.
 
 </section>
 
@@ -130,7 +87,7 @@ Drawing on Ebbinghaus and Tulving — not as a biology spec, but as engineering 
   <PipelineDiagram />
 </Figure>
 
-The exponent softens the decay penalty: a memory at 20% retention keeps 62% of its similarity score. Old-but-relevant beats recent-but-marginal. Tune the exponent through `retrieval_score_exponent` if your domain wants more or less of the past.
+A memory at 20% retention keeps 62% of its similarity score. Old-but-relevant beats recent-but-marginal.
 
 </section>
 
@@ -144,17 +101,17 @@ The exponent softens the decay penalty: a memory at 20% retention keeps 62% of i
     ```python
     from cognitive_memory import CognitiveMemory, MemoryCategory
 
-    mem = CognitiveMemory(user_id="alice")              # user_id is per-instance (v0.4.0)
+    mem = CognitiveMemory(user_id="alice")
 
     await mem.add(
         "Alex is allergic to peanuts",
         category=MemoryCategory.CORE,
-        importance=0.95,                                # core memories floor at 0.60
+        importance=0.95,
     )
 
     response = await mem.search("food allergies?")
     for r in response.results:
-        print(r.memory.content, r.combined_score)      # combined = sim · R^0.3
+        print(r.memory.content, r.combined_score)
     ```
   </TabItem>
   <TabItem label="TypeScript">
@@ -168,18 +125,18 @@ The exponent softens the decay penalty: a memory at 20% retention keeps 62% of i
     const mem = new CognitiveMemory({
       adapter: new InMemoryAdapter(),
       embeddingProvider: new HashEmbeddingProvider(),
-      userId: "alice",                                  // userId is required (v0.4.0)
+      userId: "alice",
     });
 
     await mem.store({
       content: "Alex is allergic to peanuts",
       category: "core",
-      importance: 0.95,                                 // core memories floor at 0.60
+      importance: 0.95,
     });
 
     const { results } = await mem.search({ query: "food allergies?" });
     for (const r of results) {
-      console.log(r.memory.content, r.combinedScore);  // combined = sim · R^0.3
+      console.log(r.memory.content, r.combinedScore);
     }
     ```
   </TabItem>
@@ -192,16 +149,16 @@ The exponent softens the decay penalty: a memory at 20% retention keeps 62% of i
 
 <div class="whats-new">
   <div>
-    <strong>LLMProvider is yours</strong>
-    <p>No <code>OPENAI_API_KEY</code> required. Implement the interface, inject the instance — Anthropic, local, or a gateway.</p>
+    <strong>Bring your own LLM</strong>
+    <p>No <code>OPENAI_API_KEY</code> required. Implement <code>LLMProvider</code>; inject Anthropic, local, or a gateway.</p>
   </div>
   <div>
     <strong>Multi-tenant by default</strong>
-    <p>Two <code>CognitiveMemory(user_id=...)</code> instances share one adapter without bleeding state. Queries scope per user.</p>
+    <p>Two <code>CognitiveMemory(user_id=...)</code> instances share one adapter without bleeding state.</p>
   </div>
   <div>
-    <strong>File-backed durability in Python</strong>
-    <p><code>JsonlFileAdapter("path.jsonl")</code> ships now. Single-process production without a database.</p>
+    <strong>File-backed durability</strong>
+    <p><code>JsonlFileAdapter("path.jsonl")</code> ships in Python. Single-process production without a database.</p>
   </div>
 </div>
 
@@ -213,15 +170,15 @@ The exponent softens the decay penalty: a memory at 20% retention keeps 62% of i
 <div class="read-more">
   <a href="https://arxiv.org/abs/2510.21357">
     <strong>The paper.</strong>
-    <span><em>Cognitive Memory for AI Agents: Decay Floors, Emergent Core Memories, and Retrieval-Driven Reinforcement.</em> arXiv preprint with full architecture, ablations, and benchmark methodology.</span>
+    <span>Architecture, ablations, and benchmark methodology in full.</span>
   </a>
   <a href="/getting-started/python/">
     <strong>The docs.</strong>
-    <span>Quickstart in Python and TypeScript. Adapter contracts. Concept walkthroughs. Configuration tuning recipes.</span>
+    <span>Quickstart, adapter contracts, concept walkthroughs, tuning recipes.</span>
   </a>
   <a href="https://github.com/bhekanik/cognitive-memory">
     <strong>The repo.</strong>
-    <span>SDK source on GitHub. Benchmark suite — including LoCoMo, LongMemEval-S, and LTI-Bench v2 runners — lives separately for reproducibility.</span>
+    <span>SDKs on GitHub. Benchmark suite — LoCoMo, LongMemEval-S, LTI-Bench v2 — lives separately.</span>
   </a>
 </div>
 

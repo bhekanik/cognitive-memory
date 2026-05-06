@@ -2,10 +2,9 @@
 /**
  * CommitmentTable — six-row design-commitment spec.
  *
- * Each row has a number, a body (title + one-line precis), and a
- * specific (formula, threshold, or numeric). Each row gets one accent
- * colour from the --cm-* palette to give the spec rhythm without a
- * rainbow.
+ * Each row is a single visual unit: a number, a body (title + precis),
+ * and a spec column with the formula or thresholds in mono. One accent
+ * stripe runs down the left edge of the whole row.
  */
 interface Row {
   num: string;
@@ -21,13 +20,13 @@ const { rows } = Astro.props;
 ---
 <div class="commitment-table">
   {rows.map((r) => (
-    <>
-      <div class="commitment-num" data-accent={r.accent}>{r.num}</div>
-      <div class="commitment-body" data-accent={r.accent}>
+    <div class="commitment-row" data-accent={r.accent}>
+      <div class="commitment-num">{r.num}</div>
+      <div class="commitment-body">
         <strong>{r.title}</strong>
         <p>{r.body}</p>
       </div>
-      <div class="commitment-spec" data-accent={r.accent} set:html={r.spec} />
-    </>
+      <div class="commitment-spec" set:html={r.spec} />
+    </div>
   ))}
 </div>
