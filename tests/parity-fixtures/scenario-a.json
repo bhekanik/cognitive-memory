@@ -1,0 +1,17 @@
+{
+  "description": "Scenario A: minimal — three manual ingests, one search. Tests baseline parity of add() + search() with deterministic hash embeddings.",
+  "user_id": "alice",
+  "embedder": "hash",
+  "events": [
+    {"t_seconds": 0, "op": "add", "content": "Alex prefers tea", "category": "semantic", "importance": 0.7},
+    {"t_seconds": 0, "op": "add", "content": "Alex lives in Berlin", "category": "core", "importance": 0.9},
+    {"t_seconds": 0, "op": "add", "content": "Alex went hiking last weekend", "category": "episodic", "importance": 0.4},
+    {"t_seconds": 86400, "op": "search", "query": "Alex prefers tea", "limit": 3}
+  ],
+  "expected": {
+    "memory_count": 3,
+    "categories": {"semantic": 1, "core": 1, "episodic": 1},
+    "search_top_content": "Alex prefers tea",
+    "search_top_category": "semantic"
+  }
+}

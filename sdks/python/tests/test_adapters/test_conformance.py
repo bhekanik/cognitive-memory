@@ -102,3 +102,104 @@ async def test_cold_migration(adapter):
 
     assert await adapter.hot_count() == 1
     assert await adapter.cold_count() == 0
+
+
+# ----------------------------------------------------------------------
+# Adapter-level link table (spec contract: spec/adapter-interface.md:147-177)
+# ----------------------------------------------------------------------
+
+
+async def _seed_pair(adapter) -> tuple[Memory, Memory]:
+    a = Memory(content="A", created_at=datetime(2024, 1, 1))
+    b = Memory(content="B", created_at=datetime(2024, 1, 1))
+    await adapter.create(a)
+    await adapter.create(b)
+    return a, b
+
+
+@pytest.mark.asyncio
+async def test_create_and_get_link(adapter):
+    """create_or_strengthen_link persists a link that get_linked_memories surfaces."""
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.4)
+
+    linked = await adapter.get_linked_memories(a.id, min_weight=0.0)
+    ids = {m.id for m, _w in linked}
+    assert b.id in ids
+    weight = next(w for m, w in linked if m.id == b.id)
+    assert weight == pytest.approx(0.4)
+
+
+@pytest.mark.asyncio
+async def test_link_strengthens_additively_with_cap(adapter):
+    """Strengthening an existing link adds weight, capped at 1.0.
+
+    Matches the engine's expectation in retrieval-time co-retrieval boosting.
+    The spec's prior wording ('max(existing, new)') is being corrected as part
+    of this work; this test pins the current engine behaviour.
+    """
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.4)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.3)
+
+    linked = await adapter.get_linked_memories(a.id, min_weight=0.0)
+    weight = next(w for m, w in linked if m.id == b.id)
+    assert weight == pytest.approx(0.7)
+
+    # Cap test: total beyond 1.0 saturates.
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.6)
+    linked = await adapter.get_linked_memories(a.id, min_weight=0.0)
+    weight = next(w for m, w in linked if m.id == b.id)
+    assert weight == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_link_is_symmetric(adapter):
+    """A link from a→b is also visible querying from b's side."""
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.5)
+
+    from_b = await adapter.get_linked_memories(b.id, min_weight=0.0)
+    assert any(m.id == a.id for m, _ in from_b)
+
+
+@pytest.mark.asyncio
+async def test_delete_link_is_idempotent(adapter):
+    """delete_link removes the link; calling it again is a no-op."""
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.5)
+
+    await adapter.delete_link(a.id, b.id)
+    assert await adapter.get_linked_memories(a.id, min_weight=0.0) == []
+
+    # Idempotent: second call must not raise.
+    await adapter.delete_link(a.id, b.id)
+    await adapter.delete_link("does-not-exist", "also-not-there")
+
+
+@pytest.mark.asyncio
+async def test_link_weight_filter(adapter):
+    """get_linked_memories(min_weight=W) excludes links below W."""
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.2)
+
+    above = await adapter.get_linked_memories(a.id, min_weight=0.0)
+    below = await adapter.get_linked_memories(a.id, min_weight=0.5)
+
+    assert any(m.id == b.id for m, _ in above)
+    assert all(m.id != b.id for m, _ in below)
+
+
+@pytest.mark.asyncio
+async def test_clear_wipes_links(adapter):
+    """clear() must drop all links, not just memories."""
+    a, b = await _seed_pair(adapter)
+    await adapter.create_or_strengthen_link(a.id, b.id, 0.5)
+
+    await adapter.clear()
+
+    # After clear, recreate the memories so get_linked_memories has something
+    # to look up — and confirm there are no links pointing at it.
+    await adapter.create(a)
+    await adapter.create(b)
+    assert await adapter.get_linked_memories(a.id, min_weight=0.0) == []
