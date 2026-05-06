@@ -97,12 +97,27 @@ export class ConvexAdapter extends MemoryAdapter {
       lastAccessed: memory.lastAccessed,
       retention: memory.retention,
       metadata: {
+        ...(memory.metadata ?? {}),
         category,
         importance: importance10,
         extractedAt: now,
         confidence: 1.0,
         verifiedBy: "manual",
       },
+      associations: memory.associations,
+      sessionIds: memory.sessionIds,
+      isCold: memory.isCold,
+      coldSince: memory.coldSince,
+      daysAtFloor: memory.daysAtFloor,
+      isSuperseded: memory.isSuperseded,
+      supersededBy: memory.supersededBy,
+      isStub: memory.isStub,
+      contradictedBy: memory.contradictedBy,
+      semanticType: memory.semanticType,
+      validFrom: memory.validFrom,
+      validUntil: memory.validUntil,
+      ttlSeconds: memory.ttlSeconds,
+      sourceTurnIds: memory.sourceTurnIds,
     });
 
     return id;
@@ -141,17 +156,42 @@ export class ConvexAdapter extends MemoryAdapter {
   async updateMemory(id: string, updates: Partial<Memory>): Promise<void> {
     const payload: Record<string, unknown> = { id };
 
+    if (updates.userId !== undefined) payload.userId = updates.userId;
     if (updates.content !== undefined) payload.content = updates.content;
     if (updates.embedding !== undefined) payload.embedding = updates.embedding;
     if (updates.category !== undefined) payload.category = updates.category;
+    if (updates.importance !== undefined)
+      payload.importance = updates.importance * 10;
     if (updates.stability !== undefined) payload.stability = updates.stability;
     if (updates.accessCount !== undefined)
       payload.accessCount = updates.accessCount;
     if (updates.lastAccessed !== undefined)
       payload.lastAccessed = updates.lastAccessed;
     if (updates.retention !== undefined) payload.retention = updates.retention;
-    if (updates.importance !== undefined)
-      payload.importance = updates.importance * 10;
+    if (updates.metadata !== undefined) payload.metadata = updates.metadata;
+    if (updates.associations !== undefined)
+      payload.associations = updates.associations;
+    if (updates.sessionIds !== undefined) payload.sessionIds = updates.sessionIds;
+    if (updates.isCold !== undefined) payload.isCold = updates.isCold;
+    if (updates.coldSince !== undefined) payload.coldSince = updates.coldSince;
+    if (updates.daysAtFloor !== undefined)
+      payload.daysAtFloor = updates.daysAtFloor;
+    if (updates.isSuperseded !== undefined)
+      payload.isSuperseded = updates.isSuperseded;
+    if (updates.supersededBy !== undefined)
+      payload.supersededBy = updates.supersededBy;
+    if (updates.isStub !== undefined) payload.isStub = updates.isStub;
+    if (updates.contradictedBy !== undefined)
+      payload.contradictedBy = updates.contradictedBy;
+    if (updates.semanticType !== undefined)
+      payload.semanticType = updates.semanticType;
+    if (updates.validFrom !== undefined) payload.validFrom = updates.validFrom;
+    if (updates.validUntil !== undefined) payload.validUntil = updates.validUntil;
+    if (updates.ttlSeconds !== undefined) payload.ttlSeconds = updates.ttlSeconds;
+    if (updates.sourceTurnIds !== undefined)
+      payload.sourceTurnIds = updates.sourceTurnIds;
+    if (updates.createdAt !== undefined) payload.createdAt = updates.createdAt;
+    if (updates.updatedAt !== undefined) payload.updatedAt = updates.updatedAt;
 
     await this.client.mutation(this.fns.updateCognitiveMemory, payload);
   }
@@ -175,6 +215,8 @@ export class ConvexAdapter extends MemoryAdapter {
       minRetention: filters?.minRetention,
       limit: filters?.limit ?? 5,
       includeSuperseded: filters?.includeSuperseded ?? false,
+      includeCold: filters?.includeCold ?? false,
+      includeStubs: filters?.includeStubs ?? false,
     });
 
     if (!Array.isArray(raw)) return [];
@@ -440,14 +482,18 @@ export class ConvexAdapter extends MemoryAdapter {
       metadata: metadata ?? undefined,
       isCold: typeof raw.isCold === "boolean" ? raw.isCold : false,
       coldSince: typeof raw.coldSince === "number" ? raw.coldSince : null,
+      daysAtFloor: typeof raw.daysAtFloor === "number" ? raw.daysAtFloor : 0,
       isSuperseded: typeof raw.isSuperseded === "boolean" ? raw.isSuperseded : false,
       supersededBy: typeof raw.supersededBy === "string" ? raw.supersededBy : null,
       isStub: typeof raw.isStub === "boolean" ? raw.isStub : false,
+      contradictedBy: typeof raw.contradictedBy === "string" ? raw.contradictedBy : null,
       semanticType: (typeof raw.semanticType === "string" ? raw.semanticType : "other") as SemanticType,
       validFrom: typeof raw.validFrom === "number" ? raw.validFrom : null,
       validUntil: typeof raw.validUntil === "number" ? raw.validUntil : null,
       ttlSeconds: typeof raw.ttlSeconds === "number" ? raw.ttlSeconds : null,
       sourceTurnIds: Array.isArray(raw.sourceTurnIds) ? raw.sourceTurnIds.filter((s: unknown) => typeof s === "string") : [],
+      sessionIds: Array.isArray(raw.sessionIds) ? raw.sessionIds.filter((s: unknown) => typeof s === "string") : [],
+      associations: isRecord(raw.associations) ? raw.associations as Memory["associations"] : {},
     });
   }
 }

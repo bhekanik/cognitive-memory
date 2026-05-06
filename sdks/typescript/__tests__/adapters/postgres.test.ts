@@ -45,6 +45,23 @@ describe("PostgresAdapter", () => {
     expect(params[1]).toBe("u1");
   });
 
+  test("vectorSearch excludes cold memories unless includeCold is true", async () => {
+    const pool = makePool();
+    const adapter = new PostgresAdapter({ pool });
+
+    await adapter.vectorSearch([0, 1], { userId: "u1", limit: 3 });
+    const [defaultSql] = (pool as any).query.mock.calls[0] as [string];
+    expect(defaultSql).toContain("is_cold = false");
+
+    await adapter.vectorSearch([0, 1], {
+      userId: "u1",
+      includeCold: true,
+      limit: 3,
+    });
+    const [deepSql] = (pool as any).query.mock.calls[1] as [string];
+    expect(deepSql).not.toContain("is_cold = false");
+  });
+
   test("transaction issues BEGIN/COMMIT and uses tx client", async () => {
     const pool = makePool();
     const clientQuery = vi.fn().mockResolvedValue({ rows: [] });

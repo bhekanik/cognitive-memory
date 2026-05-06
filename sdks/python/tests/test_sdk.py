@@ -14,6 +14,18 @@ from cognitive_memory import (
     MemoryCategory,
     SearchResult,
 )
+from cognitive_memory.extraction import MemoryExtractor
+
+
+def stub_extraction_llm(monkeypatch):
+    """Keep semantic extraction tests local and deterministic."""
+    monkeypatch.setattr(
+        MemoryExtractor,
+        "_call_llm",
+        lambda self, prompt, max_tokens=1000: (
+            '[{"content": "User name is Ross", "category": "semantic", "importance": 0.8}]'
+        ),
+    )
 
 def test_basic_add_and_search():
     """Test basic memory storage and retrieval."""
@@ -277,8 +289,9 @@ def test_extraction_mode_raw():
     print(f"  extraction_mode_raw: PASS (stored {len(stored)} raw turns)")
 
 
-def test_extraction_mode_hybrid():
+def test_extraction_mode_hybrid(monkeypatch):
     """Test hybrid mode stores both raw turns and extracted facts."""
+    stub_extraction_llm(monkeypatch)
     config = CognitiveMemoryConfig(extraction_mode="hybrid")
     mem = SyncCognitiveMemory(config=config, embedder="hash")
 
@@ -300,8 +313,9 @@ def test_extraction_mode_hybrid():
     print(f"  extraction_mode_hybrid: PASS ({raw_count} raw + {extracted_count} extracted = {len(stored)} total)")
 
 
-def test_extraction_mode_semantic_default():
+def test_extraction_mode_semantic_default(monkeypatch):
     """Test that default mode is semantic (backward compat)."""
+    stub_extraction_llm(monkeypatch)
     config = CognitiveMemoryConfig()
     assert config.extraction_mode == "semantic"
 

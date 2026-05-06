@@ -132,14 +132,18 @@ export class JsonlFileAdapter extends MemoryAdapter {
 
   async queryMemories(filters: MemoryFilters): Promise<Memory[]> {
     await this.ready();
-    let items = [
-      ...Array.from(this.hot.values()),
-      ...Array.from(this.cold.values()),
-    ];
+    let items = Array.from(this.hot.values());
+
+    if (filters.includeCold) {
+      items = [...items, ...Array.from(this.cold.values())];
+    }
+    if (filters.includeStubs) {
+      items = [...items, ...Array.from(this.stubs.values())];
+    }
 
     if (!filters.includeSuperseded)
       items = items.filter((m) => !m.isSuperseded);
-    items = items.filter((m) => !m.isStub);
+    if (!filters.includeStubs) items = items.filter((m) => !m.isStub);
 
     if (filters.userId)
       items = items.filter((m) => m.userId === filters.userId);
@@ -199,8 +203,11 @@ export class JsonlFileAdapter extends MemoryAdapter {
     await this.ready();
     let items = Array.from(this.hot.values());
 
-    if (filters?.includeSuperseded) {
+    if (filters?.includeCold) {
       items = [...items, ...Array.from(this.cold.values())];
+    }
+    if (filters?.includeStubs) {
+      items = [...items, ...Array.from(this.stubs.values())];
     }
 
     if (filters?.userId)
@@ -211,7 +218,7 @@ export class JsonlFileAdapter extends MemoryAdapter {
       items = items.filter((m) => m.retention >= filters.minRetention!);
     if (!filters?.includeSuperseded)
       items = items.filter((m) => !m.isSuperseded);
-    items = items.filter((m) => !m.isStub);
+    if (!filters?.includeStubs) items = items.filter((m) => !m.isStub);
 
     return items
       .map((m) => {
@@ -320,9 +327,13 @@ export class JsonlFileAdapter extends MemoryAdapter {
     if (queryTokens.length === 0) return [];
 
     let items = Array.from(this.hot.values());
+    if (filters?.includeCold)
+      items = [...items, ...Array.from(this.cold.values())];
+    if (filters?.includeStubs)
+      items = [...items, ...Array.from(this.stubs.values())];
     if (!filters?.includeSuperseded)
       items = items.filter((m) => !m.isSuperseded);
-    items = items.filter((m) => !m.isStub);
+    if (!filters?.includeStubs) items = items.filter((m) => !m.isStub);
     if (filters?.userId)
       items = items.filter((m) => m.userId === filters.userId);
 

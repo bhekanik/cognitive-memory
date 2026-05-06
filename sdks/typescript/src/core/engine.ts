@@ -33,6 +33,13 @@ import { getRetentionFloor } from "./types";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const EXPIRABLE_TYPES: Set<string> = new Set(["plan", "transient_state"]);
 
+type SearchOptions = {
+  userId?: string;
+  categories?: MemoryCategory[];
+  minRetention?: number;
+  includeAssociations?: boolean;
+};
+
 /**
  * The computational core. Operates on a MemoryAdapter and applies
  * all the temporal dynamics described in the paper.
@@ -187,67 +194,74 @@ export class CognitiveEngine {
     return decayed;
   }
 
-  getAssociatedMemories(
+  async getAssociatedMemories(
     memory: Memory,
     now: number,
-  ): Array<{ memory: Memory; weight: number }> {
-    const results: Array<{ memory: Memory; weight: number }> = [];
+  ): Promise<Array<{ memory: Memory; weight: number }>> {
+    const candidateWeights = new Map<string, number>();
     const threshold = this.config.associationRetrievalThreshold;
 
     for (const assoc of Object.values(memory.associations)) {
       const weight = this.decayAssociation(assoc, now);
       if (weight < threshold) continue;
-
-      // Sync get from adapter (InMemoryAdapter has hot/cold/stubs Maps)
-      const target = this.syncGet(assoc.targetId);
-      if (!target || target.isStub) continue;
-
-      results.push({ memory: target, weight });
+      candidateWeights.set(
+        assoc.targetId,
+        Math.max(candidateWeights.get(assoc.targetId) ?? 0, weight),
+      );
     }
 
-    return results;
-  }
-
-  private syncGet(memoryId: string): Memory | null {
-    // InMemoryAdapter exposes hot/cold/stubs Maps for sync access
-    const adapter = this.adapter as { hot?: Map<string, Memory>; cold?: Map<string, Memory>; stubs?: Map<string, Memory> };
-    if (adapter.hot) {
-      return adapter.hot.get(memoryId) ??
-        adapter.cold?.get(memoryId) ??
-        adapter.stubs?.get(memoryId) ??
-        null;
+    const linked = await this.adapter.getLinkedMemories(memory.id, threshold);
+    for (const link of linked) {
+      if (link.isStub) continue;
+      candidateWeights.set(
+        link.id,
+        Math.max(candidateWeights.get(link.id) ?? 0, link.linkStrength),
+      );
     }
-    return null;
+
+    if (candidateWeights.size === 0) return [];
+
+    const targets = await this.adapter.getMemories(Array.from(candidateWeights.keys()));
+    const byId = new Map(targets.map((target) => [target.id, target]));
+
+    return Array.from(candidateWeights.entries()).flatMap(([targetId, weight]) => {
+      const target = byId.get(targetId);
+      return target && !target.isStub ? [{ memory: target, weight }] : [];
+    });
   }
 
   // ------------------------------------------------------------------
   // Graph expansion / bridge discovery (v6)
   // ------------------------------------------------------------------
 
-  private expandGraph(
+  private async expandGraph(
     anchors: Memory[],
     now: number,
     seenIds: Set<string>,
     maxHops: number,
-  ): Array<{ memory: Memory; weight: number }> {
+  ): Promise<Array<{ memory: Memory; weight: number }>> {
     let frontier = anchors.slice();
     const results: Array<{ memory: Memory; weight: number }> = [];
 
     for (let hop = 0; hop < maxHops; hop++) {
       const nextFrontier: Memory[] = [];
+      const candidates: Array<{ targetId: string; weight: number }> = [];
       for (const mem of frontier) {
         for (const assoc of Object.values(mem.associations)) {
           const weight = this.decayAssociation(assoc, now);
           if (weight < this.config.minBridgeEdgeWeight) continue;
           if (seenIds.has(assoc.targetId)) continue;
-
-          const target = this.syncGet(assoc.targetId);
-          if (!target || target.isStub) continue;
-
-          seenIds.add(target.id);
-          results.push({ memory: target, weight });
-          nextFrontier.push(target);
+          candidates.push({ targetId: assoc.targetId, weight });
         }
+      }
+      const targets = await this.adapter.getMemories(candidates.map((c) => c.targetId));
+      const byId = new Map(targets.map((target) => [target.id, target]));
+      for (const { targetId, weight } of candidates) {
+        const target = byId.get(targetId);
+        if (!target || target.isStub || seenIds.has(target.id)) continue;
+        seenIds.add(target.id);
+        results.push({ memory: target, weight });
+        nextFrontier.push(target);
       }
       frontier = nextFrontier;
     }
@@ -255,7 +269,7 @@ export class CognitiveEngine {
     return results;
   }
 
-  private findBridgePaths(anchors: Memory[], now: number): string[][] {
+  private async findBridgePaths(anchors: Memory[], now: number): Promise<string[][]> {
     if (anchors.length < 2) return [];
 
     const chains: string[][] = [];
@@ -263,7 +277,7 @@ export class CognitiveEngine {
 
     for (let i = 0; i < anchorIds.length; i++) {
       for (let j = i + 1; j < anchorIds.length; j++) {
-        const path = this.bfsPath(anchorIds[i], anchorIds[j], now, 3);
+        const path = await this.bfsPath(anchorIds[i], anchorIds[j], now, 3);
         if (path && path.length > 2) {
           chains.push(path);
           if (chains.length >= this.config.maxBridgePaths) return chains;
@@ -273,12 +287,12 @@ export class CognitiveEngine {
     return chains;
   }
 
-  private bfsPath(
+  private async bfsPath(
     startId: string,
     endId: string,
     now: number,
     maxDepth: number,
-  ): string[] | null {
+  ): Promise<string[] | null> {
     const queue: string[][] = [[startId]];
     const visited = new Set([startId]);
 
@@ -287,7 +301,7 @@ export class CognitiveEngine {
       if (path.length > maxDepth + 1) break;
 
       const currentId = path[path.length - 1];
-      const current = this.syncGet(currentId);
+      const current = await this.adapter.getMemory(currentId);
       if (!current) continue;
 
       for (const assoc of Object.values(current.associations)) {
@@ -337,18 +351,27 @@ export class CognitiveEngine {
     queryText?: string,
     trace: boolean = false,
     llm?: LLMProvider,
+    options: SearchOptions = {},
   ): Promise<SearchResponse> {
     const alpha = this.config.retrievalScoreExponent;
     const searchTrace: SearchTrace | undefined = trace
       ? { totalWallMs: 0, totalTokens: 0, stages: {} }
       : undefined;
     const tTotal = trace ? performance.now() : 0;
+    const candidateLimit = this.config.rerankEnabled
+      ? Math.max(topK * this.config.rerankFactor, this.config.kRerank)
+      : topK * 3;
 
     // Step 1: Similarity search in hot store
     let t0 = trace ? performance.now() : 0;
     const candidates = await this.adapter.vectorSearch(queryEmbedding, {
-      limit: topK * 3,
+      userId: options.userId,
+      categories: options.categories,
+      minRetention: options.minRetention,
+      limit: candidateLimit,
+      includeCold: deepRecall,
       includeSuperseded: deepRecall,
+      includeStubs: false,
     });
     if (trace && searchTrace) {
       searchTrace.stages.vector_search = {
@@ -361,8 +384,13 @@ export class CognitiveEngine {
     // Step 1b: Lexical search (if hybrid enabled)
     if (this.config.hybridSearch && queryText) {
       const lexicalResults = await this.adapter.searchLexical(queryText, {
+        userId: options.userId,
+        categories: options.categories,
+        minRetention: options.minRetention,
         limit: this.config.kSparse,
+        includeCold: deepRecall,
         includeSuperseded: deepRecall,
+        includeStubs: false,
       });
       const seenIds = new Set(candidates.map((c) => (c as Memory).id));
       for (const lexMem of lexicalResults) {
@@ -435,9 +463,10 @@ export class CognitiveEngine {
     scored.sort((a, b) => b.combinedScore - a.combinedScore);
 
     // Step 2c: LLM rerank (if enabled and LLM provided)
+    let usedRerank = false;
     if (this.config.rerankEnabled && llm && queryText && scored.length > 1) {
       t0 = trace ? performance.now() : 0;
-      const kRerank = Math.min(this.config.kRerank, scored.length);
+      const kRerank = Math.min(candidateLimit, scored.length);
       const toRerank = scored.slice(0, kRerank);
 
       const { rerankedIndices, usage } = await rerankCandidates(
@@ -462,6 +491,7 @@ export class CognitiveEngine {
       }
       // Append remainder beyond kRerank
       scored = [...reranked, ...scored.slice(kRerank)];
+      usedRerank = true;
 
       if (trace && searchTrace) {
         const promptTokens = usage.promptTokens ?? 0;
@@ -484,33 +514,36 @@ export class CognitiveEngine {
     const seenIds = new Set(directResults.map((r) => r.memory.id));
     const associativeResults: SearchResult[] = [];
 
-    for (const result of directResults) {
-      const associated = this.getAssociatedMemories(result.memory, now);
-      for (const { memory: assocMem, weight: assocWeight } of associated) {
-        if (seenIds.has(assocMem.id)) continue;
-        seenIds.add(assocMem.id);
+    if (options.includeAssociations !== false) {
+      for (const result of directResults) {
+        const associated = await this.getAssociatedMemories(result.memory, now);
+        for (const { memory: assocMem, weight: assocWeight } of associated) {
+          if (seenIds.has(assocMem.id)) continue;
+          seenIds.add(assocMem.id);
 
-        const relevance =
-          assocMem.embedding.length > 0
-            ? cosineSimilarity(queryEmbedding, assocMem.embedding)
-            : 0.1;
-        const retention = this.computeRetention(assocMem, now);
-        const combined = relevance * retention ** alpha * assocWeight;
+          const relevance =
+            assocMem.embedding.length > 0
+              ? cosineSimilarity(queryEmbedding, assocMem.embedding)
+              : 0.1;
+          const retention = this.computeRetention(assocMem, now);
+          if (options.minRetention !== undefined && retention < options.minRetention) continue;
+          const combined = relevance * retention ** alpha * assocWeight;
 
-        associativeResults.push({
-          memory: assocMem,
-          relevanceScore: relevance,
-          retentionScore: retention,
-          combinedScore: combined,
-          isAssociative: true,
-          viaDeepRecall: false,
-        });
+          associativeResults.push({
+            memory: assocMem,
+            relevanceScore: relevance,
+            retentionScore: retention,
+            combinedScore: combined,
+            isAssociative: true,
+            viaDeepRecall: false,
+          });
+        }
       }
     }
 
     // Step 3b: Graph expansion (if configured)
-    if (this.config.graphExpansionHops > 0) {
-      const expanded = this.expandGraph(
+    if (options.includeAssociations !== false && this.config.graphExpansionHops > 0) {
+      const expanded = await this.expandGraph(
         directResults.map((r) => r.memory),
         now, seenIds, this.config.graphExpansionHops,
       );
@@ -519,6 +552,7 @@ export class CognitiveEngine {
           ? cosineSimilarity(queryEmbedding, expMem.embedding)
           : 0.1;
         const retention = this.computeRetention(expMem, now);
+        if (options.minRetention !== undefined && retention < options.minRetention) continue;
         const combined = relevance * retention ** alpha * expWeight;
 
         associativeResults.push({
@@ -535,7 +569,7 @@ export class CognitiveEngine {
     // Bridge discovery
     let evidenceChains: string[][] = [];
     if (this.config.bridgeDiscovery) {
-      evidenceChains = this.findBridgePaths(
+      evidenceChains = await this.findBridgePaths(
         directResults.map((r) => r.memory), now,
       );
     }
@@ -587,7 +621,9 @@ export class CognitiveEngine {
 
     // Combine and sort
     const allResults = [...directResults, ...associativeResults];
-    allResults.sort((a, b) => b.combinedScore - a.combinedScore);
+    if (!usedRerank) {
+      allResults.sort((a, b) => b.combinedScore - a.combinedScore);
+    }
 
     const final = allResults.slice(0, topK);
     if (evidenceChains.length > 0 && final.length > 0) {

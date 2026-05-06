@@ -1,9 +1,11 @@
 import { InMemoryAdapter } from "../src/adapters/memory";
+import { MemoryAdapter, type MemoryFilters } from "../src/adapters/base";
 import { CognitiveMemory } from "../src/core/CognitiveMemory";
 import type {
   EmbeddingProvider,
   Memory,
   MemoryCategory,
+  ScoredMemory,
 } from "../src/core/types";
 import { createDefaultMemory } from "../src/core/types";
 
@@ -15,6 +17,249 @@ function providerFromMap(map: Map<string, number[]>): EmbeddingProvider {
       return v;
     },
   };
+}
+
+class AdapterWithoutSyncMaps extends MemoryAdapter {
+  constructor(private readonly inner: InMemoryAdapter) {
+    super();
+  }
+
+  createMemory(memory: Omit<Memory, "id" | "createdAt" | "updatedAt">) {
+    return this.inner.createMemory(memory);
+  }
+
+  getMemory(id: string) {
+    return this.inner.getMemory(id);
+  }
+
+  getMemories(ids: string[]) {
+    return this.inner.getMemories(ids);
+  }
+
+  queryMemories(filters: MemoryFilters) {
+    return this.inner.queryMemories(filters);
+  }
+
+  updateMemory(id: string, updates: Partial<Memory>) {
+    return this.inner.updateMemory(id, updates);
+  }
+
+  deleteMemory(id: string) {
+    return this.inner.deleteMemory(id);
+  }
+
+  deleteMemories(ids: string[]) {
+    return this.inner.deleteMemories(ids);
+  }
+
+  async vectorSearch(embedding: number[], filters?: MemoryFilters): Promise<ScoredMemory[]> {
+    const results = await this.inner.vectorSearch(embedding, filters);
+    return results.filter((memory) => memory.content === "anchor");
+  }
+
+  searchLexical(query: string, filters?: MemoryFilters) {
+    return this.inner.searchLexical(query, filters);
+  }
+
+  updateRetentionScores(updates: Map<string, number>) {
+    return this.inner.updateRetentionScores(updates);
+  }
+
+  createOrStrengthenLink(sourceId: string, targetId: string, strength: number) {
+    return this.inner.createOrStrengthenLink(sourceId, targetId, strength);
+  }
+
+  getLinkedMemories(memoryId: string, minStrength?: number) {
+    return this.inner.getLinkedMemories(memoryId, minStrength);
+  }
+
+  getLinkedMemoriesMultiple(memoryIds: string[], minStrength?: number) {
+    return this.inner.getLinkedMemoriesMultiple(memoryIds, minStrength);
+  }
+
+  deleteLink(sourceId: string, targetId: string) {
+    return this.inner.deleteLink(sourceId, targetId);
+  }
+
+  findFadingMemories(userId: string, maxRetention: number) {
+    return this.inner.findFadingMemories(userId, maxRetention);
+  }
+
+  findStableMemories(userId: string, minStability: number, minAccessCount: number) {
+    return this.inner.findStableMemories(userId, minStability, minAccessCount);
+  }
+
+  markSuperseded(memoryIds: string[], summaryId: string) {
+    return this.inner.markSuperseded(memoryIds, summaryId);
+  }
+
+  migrateToCold(memoryId: string, coldSince: number) {
+    return this.inner.migrateToCold(memoryId, coldSince);
+  }
+
+  migrateToHot(memoryId: string) {
+    return this.inner.migrateToHot(memoryId);
+  }
+
+  convertToStub(memoryId: string, stubContent: string) {
+    return this.inner.convertToStub(memoryId, stubContent);
+  }
+
+  allActive() {
+    return this.inner.allActive();
+  }
+
+  allHot() {
+    return this.inner.allHot();
+  }
+
+  allCold() {
+    return this.inner.allCold();
+  }
+
+  hotCount() {
+    return this.inner.hotCount();
+  }
+
+  coldCount() {
+    return this.inner.coldCount();
+  }
+
+  stubCount() {
+    return this.inner.stubCount();
+  }
+
+  totalCount() {
+    return this.inner.totalCount();
+  }
+
+  clear() {
+    return this.inner.clear();
+  }
+
+  transaction<T>(callback: (adapter: MemoryAdapter) => Promise<T>) {
+    return callback(this);
+  }
+}
+
+class FixedVectorAdapter extends MemoryAdapter {
+  readonly memories: Memory[];
+
+  constructor(count: number) {
+    super();
+    this.memories = Array.from({ length: count }, (_, i) =>
+      createDefaultMemory({
+        id: `m${i}`,
+        userId: "u1",
+        content: `memory-${i}`,
+        embedding: [1, 0],
+        retention: 1,
+      }),
+    );
+  }
+
+  async createMemory(): Promise<string> {
+    throw new Error("not used");
+  }
+
+  async getMemory(id: string) {
+    return this.memories.find((m) => m.id === id) ?? null;
+  }
+
+  async getMemories(ids: string[]) {
+    return this.memories.filter((m) => ids.includes(m.id));
+  }
+
+  async queryMemories() {
+    return this.memories;
+  }
+
+  async updateMemory(): Promise<void> {}
+
+  async deleteMemory(): Promise<void> {}
+
+  async deleteMemories(): Promise<void> {}
+
+  async vectorSearch(_embedding: number[], filters?: MemoryFilters): Promise<ScoredMemory[]> {
+    return this.memories.slice(0, filters?.limit ?? 5).map((memory, index) => ({
+      ...memory,
+      relevanceScore: 1 - index / 100,
+      finalScore: 1 - index / 100,
+    }));
+  }
+
+  async updateRetentionScores(): Promise<void> {}
+
+  async createOrStrengthenLink(): Promise<void> {}
+
+  async getLinkedMemories() {
+    return [];
+  }
+
+  async getLinkedMemoriesMultiple() {
+    return [];
+  }
+
+  async deleteLink(): Promise<void> {}
+
+  async findFadingMemories() {
+    return [];
+  }
+
+  async findStableMemories() {
+    return [];
+  }
+
+  async markSuperseded(): Promise<void> {}
+
+  async migrateToCold(): Promise<void> {}
+
+  async migrateToHot(): Promise<void> {}
+
+  async convertToStub(): Promise<void> {}
+
+  async allActive() {
+    return this.memories;
+  }
+
+  async allHot() {
+    return this.memories;
+  }
+
+  async allCold() {
+    return [];
+  }
+
+  async hotCount() {
+    return this.memories.length;
+  }
+
+  async coldCount() {
+    return 0;
+  }
+
+  async stubCount() {
+    return 0;
+  }
+
+  async totalCount() {
+    return this.memories.length;
+  }
+
+  async clear(): Promise<void> {}
+
+  async transaction<T>(callback: (adapter: MemoryAdapter) => Promise<T>) {
+    return callback(this);
+  }
+}
+
+class MaintenanceCountingAdapter extends InMemoryAdapter {
+  allHotCalls = 0;
+
+  override async allHot(): Promise<Memory[]> {
+    this.allHotCalls += 1;
+    return super.allHot();
+  }
 }
 
 describe("CognitiveMemory", () => {
@@ -117,6 +362,242 @@ describe("CognitiveMemory", () => {
     const a = await adapter.getMemory(aId);
     expect(a?.accessCount).toBe(1);
     expect(a?.stability).toBeGreaterThan(0.5);
+  });
+
+  test("retrieve() uses the same v6 scoring semantics as search()", async () => {
+    async function buildMemorySystem() {
+      const adapter = new InMemoryAdapter();
+      const embeddings = new Map<string, number[]>([
+        ["q", [1, 0]],
+        ["fresh", [0.8, 0.6]],
+        ["faded", [1, 0]],
+      ]);
+      const memory = new CognitiveMemory({
+        adapter,
+        embeddingProvider: providerFromMap(embeddings),
+        userId: "u1",
+        config: {
+          minRetention: 0,
+          regularRetentionFloor: 0.02,
+          retrievalScoreExponent: 0.3,
+          decayRates: { semantic: 1 },
+          runMaintenanceDuringIngestion: false,
+        },
+      });
+      const now = Date.now();
+
+      await adapter.createMemory({
+        ...createDefaultMemory({
+          id: "tmp",
+          userId: "u1",
+          content: "fresh",
+          embedding: embeddings.get("fresh")!,
+        }),
+        category: "semantic",
+        importance: 0.5,
+        stability: 1,
+        lastAccessed: now,
+      });
+      await adapter.createMemory({
+        ...createDefaultMemory({
+          id: "tmp",
+          userId: "u1",
+          content: "faded",
+          embedding: embeddings.get("faded")!,
+        }),
+        category: "semantic",
+        importance: 0,
+        stability: 0.01,
+        lastAccessed: now - 365 * 24 * 60 * 60 * 1000,
+      });
+
+      return memory;
+    }
+
+    const retrieved = await (await buildMemorySystem()).retrieve({
+      query: "q",
+      limit: 2,
+      minRetention: 0,
+    });
+    const searched = await (await buildMemorySystem()).search({
+      query: "q",
+      limit: 2,
+      deepRecall: false,
+    });
+
+    expect(retrieved.map((r) => r.content)).toEqual(
+      searched.results.map((r) => r.memory.content),
+    );
+    expect(retrieved[0].finalScore).toBeCloseTo(
+      searched.results[0].combinedScore,
+      6,
+    );
+
+    const faded = retrieved.find((r) => r.content === "faded");
+    expect(faded?.retention).toBeCloseTo(0.02, 6);
+    expect(faded?.relevanceScore).toBeCloseTo(1, 6);
+    expect(faded?.finalScore).toBeCloseTo(0.309, 3);
+  });
+
+  test("search() follows memory associations through the adapter interface", async () => {
+    const inner = new InMemoryAdapter();
+    const adapter = new AdapterWithoutSyncMaps(inner);
+    const embeddings = new Map<string, number[]>([
+      ["q", [1, 0]],
+      ["anchor", [1, 0]],
+      ["associated", [1, 0]],
+    ]);
+    const memory = new CognitiveMemory({
+      adapter,
+      embeddingProvider: providerFromMap(embeddings),
+      userId: "u1",
+      config: {
+        minRetention: 0,
+        associationRetrievalThreshold: 0.3,
+        graphExpansionHops: 0,
+        runMaintenanceDuringIngestion: false,
+      },
+    });
+    const now = Date.now();
+    const associatedId = await adapter.createMemory({
+      ...createDefaultMemory({
+        id: "tmp",
+        userId: "u1",
+        content: "associated",
+        embedding: embeddings.get("associated")!,
+      }),
+      lastAccessed: now,
+    });
+    await adapter.createMemory({
+      ...createDefaultMemory({
+        id: "tmp",
+        userId: "u1",
+        content: "anchor",
+        embedding: embeddings.get("anchor")!,
+      }),
+      lastAccessed: now,
+      associations: {
+        [associatedId]: {
+          targetId: associatedId,
+          weight: 0.8,
+          lastCoRetrieval: null,
+          createdAt: now,
+        },
+      },
+    });
+
+    const results = await memory.search({
+      query: "q",
+      limit: 2,
+    });
+
+    expect(results.results.map((r) => r.memory.content)).toContain("anchor");
+    expect(results.results.map((r) => r.memory.content)).toContain("associated");
+  });
+
+  test("rerankFactor controls candidate count and final order", async () => {
+    const adapter = new FixedVectorAdapter(30);
+    const memory = new CognitiveMemory({
+      adapter,
+      embeddingProvider: providerFromMap(new Map([["q", [1, 0]]])),
+      userId: "u1",
+      config: {
+        rerankEnabled: true,
+        rerankFactor: 3,
+        minRetention: 0,
+        graphExpansionHops: 0,
+        runMaintenanceDuringIngestion: false,
+      },
+    });
+    const reranked = Array.from({ length: 10 }, (_, i) => 29 - i);
+    const llm = {
+      async complete() {
+        return JSON.stringify(reranked);
+      },
+      async completeWithUsage() {
+        return {
+          text: JSON.stringify(reranked),
+          usage: { promptTokens: 123, completionTokens: 4 },
+        };
+      },
+    };
+
+    const response = await memory.search(
+      { query: "q", limit: 10, trace: true },
+      llm,
+    );
+
+    expect(response.trace?.stages.rerank.candidateCount).toBe(30);
+    expect(response.trace?.totalTokens).toBe(127);
+    expect(response.results.map((r) => r.memory.content)).toEqual(
+      reranked.map((i) => `memory-${i}`),
+    );
+  });
+
+  test("extractAndStore reinforces similar existing memories during ingestion", async () => {
+    const adapter = new InMemoryAdapter();
+    const embeddings = new Map<string, number[]>([
+      ["existing fact", [1, 0]],
+      ["new fact", [1, 0]],
+    ]);
+    const memory = new CognitiveMemory({
+      adapter,
+      embeddingProvider: providerFromMap(embeddings),
+      userId: "u1",
+      config: { runMaintenanceDuringIngestion: false },
+    });
+    const existingId = await adapter.createMemory({
+      ...createDefaultMemory({
+        id: "tmp",
+        userId: "u1",
+        content: "existing fact",
+        embedding: embeddings.get("existing fact")!,
+      }),
+      stability: 0.3,
+      sessionIds: ["old-session"],
+    });
+    const llm = {
+      async complete() {
+        return JSON.stringify([
+          { content: "new fact", category: "semantic", importance: 0.5 },
+        ]);
+      },
+    };
+
+    await memory.extractAndStore("User: new fact", "new-session", llm);
+
+    const existing = await adapter.getMemory(existingId);
+    expect(existing?.stability).toBeCloseTo(0.35, 6);
+  });
+
+  test("extractAndStore runs automatic maintenance every fifth ingestion", async () => {
+    const adapter = new MaintenanceCountingAdapter();
+    let count = 0;
+    const memory = new CognitiveMemory({
+      adapter,
+      embeddingProvider: {
+        async embed() {
+          return [1, 0];
+        },
+      },
+      userId: "u1",
+    });
+    const llm = {
+      async complete() {
+        count += 1;
+        return JSON.stringify([
+          { content: `fact ${count}`, category: "semantic", importance: 0.5 },
+        ]);
+      },
+    };
+
+    for (let i = 0; i < 4; i++) {
+      await memory.extractAndStore(`User: fact ${i}`, `s${i}`, llm);
+    }
+    expect(adapter.allHotCalls).toBe(0);
+
+    await memory.extractAndStore("User: fact 5", "s5", llm);
+    expect(adapter.allHotCalls).toBeGreaterThan(0);
   });
 
   test("get() strengthens a memory", async () => {

@@ -227,7 +227,7 @@ export interface ScoredMemory extends Memory {
   /** Semantic similarity score */
   relevanceScore: number;
 
-  /** Final score (relevance x retention) */
+  /** Final score from v6 scoring (relevance x retention^alpha) */
   finalScore: number;
 }
 
@@ -437,6 +437,9 @@ export interface CognitiveMemoryConfig {
   /** Number of top candidates to send to LLM for reranking (default: 10) */
   kRerank?: number;
 
+  /** Multiplier for the query-time candidate pool before reranking (default: 1) */
+  rerankFactor?: number;
+
   /** Model for reranking (defaults to extractionModel) */
   rerankModel?: string;
 
@@ -527,6 +530,7 @@ export interface ResolvedCognitiveMemoryConfig {
 
   rerankEnabled: boolean;
   kRerank: number;
+  rerankFactor: number;
   rerankModel: string | null;
 
   graphExpansionHops: number;
@@ -596,6 +600,7 @@ export const DEFAULT_CONFIG: Omit<ResolvedCognitiveMemoryConfig, "userId"> = {
 
   rerankEnabled: false,
   kRerank: 10,
+  rerankFactor: 1,
   rerankModel: null,
 
   graphExpansionHops: 1,
@@ -655,6 +660,7 @@ export function resolveConfig(
     includeExpiredInDeepRecall: config.includeExpiredInDeepRecall ?? DEFAULT_CONFIG.includeExpiredInDeepRecall,
     rerankEnabled: config.rerankEnabled ?? DEFAULT_CONFIG.rerankEnabled,
     kRerank: config.kRerank ?? DEFAULT_CONFIG.kRerank,
+    rerankFactor: config.rerankFactor ?? DEFAULT_CONFIG.rerankFactor,
     rerankModel: config.rerankModel ?? DEFAULT_CONFIG.rerankModel,
     graphExpansionHops: config.graphExpansionHops ?? DEFAULT_CONFIG.graphExpansionHops,
     bridgeDiscovery: config.bridgeDiscovery ?? DEFAULT_CONFIG.bridgeDiscovery,

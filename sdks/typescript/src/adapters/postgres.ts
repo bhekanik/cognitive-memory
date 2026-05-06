@@ -675,7 +675,12 @@ export class PostgresAdapter extends MemoryAdapter {
     if (!filters.includeSuperseded) {
       clauses.push(`is_superseded = false`);
     }
-    clauses.push(`is_stub = false`);
+    if (!filters.includeCold) {
+      clauses.push(`is_cold = false`);
+    }
+    if (!filters.includeStubs) {
+      clauses.push(`is_stub = false`);
+    }
 
     return {
       sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",

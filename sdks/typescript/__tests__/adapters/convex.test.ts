@@ -25,6 +25,27 @@ function makeClient() {
   } as unknown as ConvexClient; // Test double
 }
 
+function makeFns(): ConvexAdapterFunctions {
+  return {
+    createCognitiveMemory: ref("mutation"),
+    updateCognitiveMemory: ref("mutation"),
+    deleteCognitiveMemory: ref("mutation"),
+    deleteCognitiveMemories: ref("mutation"),
+    getCognitiveMemory: ref("query"),
+    getCognitiveMemories: ref("query"),
+    queryCognitiveMemories: ref("query"),
+    findFadingMemories: ref("query"),
+    findStableMemories: ref("query"),
+    markSuperseded: ref("mutation"),
+    batchUpdateRetention: ref("mutation"),
+    cognitiveVectorSearch: ref("action"),
+    createOrStrengthenLink: ref("mutation"),
+    getLinkedMemories: ref("query"),
+    getLinkedMemoriesMultiple: ref("query"),
+    deleteLink: ref("mutation"),
+  } as unknown as ConvexAdapterFunctions;
+}
+
 describe("ConvexAdapter", () => {
   test("createMemory maps importance 0-1 to metadata.importance 1-10 scale", async () => {
     const client = makeClient();
@@ -437,5 +458,101 @@ describe("ConvexAdapter", () => {
     });
 
     expect(await adapter.getMemory("m1")).toBeNull();
+  });
+
+  test("tier migration methods send lifecycle fields to Convex", async () => {
+    const client = makeClient();
+    client.mutation.mockResolvedValue(null);
+    const adapter = new ConvexAdapter({ client, functions: makeFns() });
+
+    await adapter.migrateToCold("m1", 123);
+    expect(client.mutation.mock.calls[0][1]).toMatchObject({
+      id: "m1",
+      isCold: true,
+      coldSince: 123,
+    });
+
+    await adapter.convertToStub("m1", "stub summary");
+    expect(client.mutation.mock.calls[1][1]).toMatchObject({
+      id: "m1",
+      content: "stub summary",
+      isStub: true,
+      isCold: false,
+      coldSince: null,
+      embedding: [],
+    });
+  });
+
+  test("createMemory and updateMemory preserve v6 lifecycle fields", async () => {
+    const client = makeClient();
+    client.mutation.mockResolvedValue("mid");
+    const adapter = new ConvexAdapter({ client, functions: makeFns() });
+
+    await adapter.createMemory({
+      userId: "u1",
+      content: "x",
+      embedding: [0, 1],
+      category: "semantic",
+      importance: 0.7,
+      stability: 0.3,
+      accessCount: 0,
+      lastAccessed: 1,
+      retention: 1,
+      metadata: { category: "identity" },
+      associations: {
+        m2: { targetId: "m2", weight: 0.6, lastCoRetrieval: null, createdAt: 1 },
+      },
+      sessionIds: ["s1"],
+      isCold: true,
+      coldSince: 2,
+      daysAtFloor: 3,
+      isSuperseded: true,
+      supersededBy: "summary",
+      isStub: false,
+      contradictedBy: "m0",
+      semanticType: "plan",
+      validFrom: 10,
+      validUntil: 20,
+      ttlSeconds: 30,
+      sourceTurnIds: ["t1"],
+    });
+
+    expect(client.mutation.mock.calls[0][1]).toMatchObject({
+      isCold: true,
+      coldSince: 2,
+      daysAtFloor: 3,
+      isSuperseded: true,
+      supersededBy: "summary",
+      isStub: false,
+      contradictedBy: "m0",
+      semanticType: "plan",
+      validFrom: 10,
+      validUntil: 20,
+      ttlSeconds: 30,
+      sourceTurnIds: ["t1"],
+      sessionIds: ["s1"],
+      associations: {
+        m2: { targetId: "m2", weight: 0.6, lastCoRetrieval: null, createdAt: 1 },
+      },
+    });
+
+    await adapter.updateMemory("mid", {
+      isCold: false,
+      daysAtFloor: 0,
+      validUntil: null,
+      sourceTurnIds: ["t2"],
+      sessionIds: ["s2"],
+      associations: {},
+    });
+
+    expect(client.mutation.mock.calls[1][1]).toMatchObject({
+      id: "mid",
+      isCold: false,
+      daysAtFloor: 0,
+      validUntil: null,
+      sourceTurnIds: ["t2"],
+      sessionIds: ["s2"],
+      associations: {},
+    });
   });
 });
