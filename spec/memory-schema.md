@@ -10,6 +10,7 @@ This document defines the Memory object fields for both the Python and TypeScrip
 @dataclass
 class Memory:
     id: str                              # UUID v4, primary key
+    user_id: str                         # Owner of this memory; default "default" for single-tenant
     content: str                         # The stored text content
     category: str                        # Classification label (e.g. "preference", "fact", "event")
     importance: float                    # 0.0–1.0, how important this memory is (set at creation, can be promoted)
@@ -66,26 +67,41 @@ class Memory:
 
 ## TypeScript Memory Interface
 
+The TypeScript `Memory` shape uses **flat top-level fields** for tiering and
+lifecycle state. The `metadata` field is a free-form bag for caller-supplied
+data, NOT a nested envelope for SDK fields.
+
 ```typescript
 interface Memory {
   id: string;                           // UUID v4, primary key
   userId: string;                       // Owner of this memory
   content: string;                      // The stored text content
-  embedding: number[] | null;           // Vector embedding of content (null for stubs)
-  memoryType: MemoryType;               // Classification enum
+  embedding: number[];                  // Vector embedding of content
+  category: MemoryCategory;             // Classification enum
   importance: number;                   // 0.0–1.0, importance score
   stability: number;                    // 0.0–1.0, resistance to decay
   accessCount: number;                  // Number of retrievals
-  lastAccessed: Date;                   // Timestamp of last retrieval
+  lastAccessed: number;                 // Unix ms — last retrieval timestamp
   retention: number;                    // Current computed retention score (0.0–1.0)
-  createdAt: Date;                      // Timestamp of creation
-  updatedAt: Date;                      // Timestamp of last modification
-  metadata: MemoryMetadata;             // Additional structured data
-  semanticType?: SemanticType;          // Semantic type classification
-  validFrom?: number | null;           // Unix ms timestamp — start of validity window
-  validUntil?: number | null;          // Unix ms timestamp — end of validity window
-  ttlSeconds?: number | null;          // Time-to-live in seconds from creation
-  sourceTurnIds?: string[];            // Conversation turn IDs that contributed to this memory
+  createdAt: number;                    // Unix ms — creation timestamp
+  updatedAt: number;                    // Unix ms — last mutation timestamp
+  metadata?: Record<string, unknown>;   // Caller-supplied free-form bag
+  // Tiering and lifecycle (flat, top-level)
+  associations: Record<string, Association>;
+  sessionIds: string[];
+  isCold: boolean;
+  coldSince: number | null;             // Unix ms when moved to cold
+  daysAtFloor: number;
+  isSuperseded: boolean;
+  supersededBy: string | null;
+  contradictedBy: string | null;
+  isStub: boolean;
+  // v6: validity window
+  semanticType?: SemanticType;
+  validFrom?: number | null;
+  validUntil?: number | null;
+  ttlSeconds?: number | null;
+  sourceTurnIds?: string[];
 }
 
 enum SemanticType {
@@ -96,25 +112,7 @@ enum SemanticType {
   Other = "other",
 }
 
-enum MemoryType {
-  Preference = "preference",
-  Fact = "fact",
-  Event = "event",
-  Relationship = "relationship",
-  General = "general",
-}
-
-interface MemoryMetadata {
-  sessionIds: string[];                 // Sessions that contributed to this memory
-  associations: Record<string, number>; // Linked memory_id -> weight
-  isCold: boolean;                      // Whether in cold storage
-  coldSince: Date | null;               // When moved to cold storage
-  daysAtFloor: number;                  // Decay cycles at retention floor
-  isSuperseded: boolean;                // Whether replaced by newer memory
-  supersededBy: string | null;          // ID of replacement
-  contradictedBy: string | null;        // ID of contradicting memory
-  isStub: boolean;                      // Whether converted to stub
-}
+type MemoryCategory = "core" | "semantic" | "episodic" | "procedural";
 ```
 
 ### Field Details
@@ -124,21 +122,30 @@ interface MemoryMetadata {
 | `id` | `string` | uuid() | Unique identifier. |
 | `userId` | `string` | required | User who owns this memory. Enables multi-tenant storage. |
 | `content` | `string` | required | The textual content. |
-| `embedding` | `number[] \| null` | `null` | Vector embedding. `null` for stubs. |
-| `memoryType` | `MemoryType` | `"general"` | Classification enum. Maps to Python's `category` field. |
+| `embedding` | `number[]` | required | Vector embedding. Empty array for stubs. |
+| `category` | `MemoryCategory` | `"semantic"` | Memory category: `"core"`, `"semantic"`, `"episodic"`, or `"procedural"`. |
 | `importance` | `number` | `0.5` | Importance score, 0.0–1.0. |
 | `stability` | `number` | `0.0` | Decay resistance, 0.0–1.0. |
 | `accessCount` | `number` | `0` | Retrieval counter. |
-| `lastAccessed` | `Date` | creation time | Last retrieval timestamp. |
-| `retention` | `number` | `1.0` | Current computed retention. Updated by the decay engine each cycle. Derived from `R^alpha` formula. Not stored in Python (computed on the fly). |
-| `createdAt` | `Date` | now | Immutable creation timestamp. |
-| `updatedAt` | `Date` | now | Updated on any mutation. Not present in Python (tracked implicitly). |
-| `metadata` | `MemoryMetadata` | defaults | Structured metadata. Groups tiering and lifecycle fields. |
-| `semanticType` | `SemanticType` | `undefined` | Semantic type of the memory. Values: `"fact"`, `"preference"`, `"plan"`, `"transient_state"`, `"other"`. Distinct from `memoryType` (which is deprecated). |
-| `validFrom` | `number \| null` | `undefined` | Unix ms timestamp marking the start of the validity window. `null` or `undefined` means valid from creation. |
-| `validUntil` | `number \| null` | `undefined` | Unix ms timestamp marking the end of the validity window. `null` or `undefined` means no scheduled expiry. |
-| `ttlSeconds` | `number \| null` | `undefined` | Time-to-live in seconds from creation. When set, the memory should be considered expired after `createdAt + ttlSeconds * 1000`. |
-| `sourceTurnIds` | `string[]` | `[]` | IDs of the conversation turns that contributed to extracting this memory. Used for provenance tracking. |
+| `lastAccessed` | `number` | now | Unix ms — last retrieval timestamp. |
+| `retention` | `number` | `1.0` | Current materialised retention. Refreshed by the engine via `engine.computeRetention(memory, now)` and persisted on the row so storage backends can index/filter on it. Python computes the equivalent on the fly and does not store this field. |
+| `createdAt` | `number` | now | Unix ms — immutable creation timestamp. |
+| `updatedAt` | `number` | now | Unix ms — updated on any mutation. Python does not have an equivalent field (its adapters track this implicitly). |
+| `metadata` | `Record<string, unknown>` | `undefined` | Caller-supplied free-form bag. Not used by the SDK; reserved for application data. |
+| `associations` | `Record<string, Association>` | `{}` | Per-memory link cache. Each value carries `targetId`, `weight`, `lastCoRetrieval`, `createdAt`. The durable record lives in the adapter-level link store; this field is the engine's read cache. |
+| `sessionIds` | `string[]` | `[]` | Sessions that created or accessed this memory. Used by the core-promotion cross-session check. |
+| `isCold` | `boolean` | `false` | True after migration to cold storage. |
+| `coldSince` | `number \| null` | `null` | Unix ms timestamp of the cold migration. `null` while hot. |
+| `daysAtFloor` | `number` | `0` | Consecutive maintenance cycles spent at the retention floor. Used to trigger cold migration. |
+| `isSuperseded` | `boolean` | `false` | True if a consolidation summary has replaced this memory. |
+| `supersededBy` | `string \| null` | `null` | ID of the replacement memory. |
+| `contradictedBy` | `string \| null` | `null` | ID of a contradicting memory (audit trail; the original is preserved). |
+| `isStub` | `boolean` | `false` | True for lightweight stubs (no embedding, content collapsed to a summary). |
+| `semanticType` | `SemanticType?` | `undefined` | `"fact"`, `"preference"`, `"plan"`, `"transient_state"`, or `"other"`. Drives v6 validity-window filtering. |
+| `validFrom` | `number \| null` | `undefined` | Unix ms — start of the validity window. `null`/`undefined` = valid from creation. |
+| `validUntil` | `number \| null` | `undefined` | Unix ms — end of the validity window. `null`/`undefined` = no scheduled expiry. |
+| `ttlSeconds` | `number \| null` | `undefined` | Time-to-live in seconds from creation. The memory expires after `createdAt + ttlSeconds * 1000`. |
+| `sourceTurnIds` | `string[]` | `[]` | Conversation turn IDs that contributed to extracting this memory. Provenance tracking. |
 
 ---
 
@@ -162,8 +169,18 @@ interface SearchTrace {
 }
 
 interface SearchResponse {
-  results: ScoredMemory[];              // Ranked results
+  results: SearchResult[];              // Ranked results
+  evidenceChains: string[][];
   trace?: SearchTrace;                  // Optional pipeline trace (included when `debug: true`)
+}
+
+interface SearchResult {
+  memory: Memory;
+  relevanceScore: number;               // Cosine similarity to query
+  retentionScore: number;               // R(m)
+  combinedScore: number;                // semantic relevance weighted by retention^alpha
+  isAssociative: boolean;
+  viaDeepRecall: boolean;
 }
 ```
 
@@ -174,27 +191,27 @@ interface SearchResponse {
 | Python Field | TypeScript Field | Notes |
 |---|---|---|
 | `id` | `id` | Same |
-| _(no equivalent)_ | `userId` | TypeScript adds explicit multi-tenancy. Python passes user_id at the API level. |
+| `user_id` | `userId` | Both SDKs scope memories by user. Python defaults to `"default"`. |
 | `content` | `content` | Same |
-| `category` | `memoryType` | String in Python, enum in TypeScript. Same values. |
+| `category` | `category` | Same value set: `"core"` / `"semantic"` / `"episodic"` / `"procedural"`. Python uses `MemoryCategory` enum, TypeScript uses a union string type. |
 | `importance` | `importance` | Same |
 | `stability` | `stability` | Same |
 | `access_count` | `accessCount` | snake_case vs camelCase |
-| `last_accessed_at` | `lastAccessed` | Python uses `datetime`, TypeScript uses `Date` |
-| _(computed)_ | `retention` | TypeScript stores the current retention score. Python computes it on the fly in the engine. |
-| `created_at` | `createdAt` | snake_case vs camelCase |
-| _(no equivalent)_ | `updatedAt` | TypeScript-only. Tracks last mutation. |
+| `last_accessed_at` | `lastAccessed` | Python `datetime`, TypeScript Unix ms `number` |
+| _(computed on the fly)_ | `retention` | TypeScript materialises retention on the row so backends like Postgres can index and filter on it. Python computes via `engine.compute_retention(memory, now)`; see Design Rationale. |
+| `created_at` | `createdAt` | Python `datetime`, TypeScript Unix ms `number` |
+| _(implicit)_ | `updatedAt` | TypeScript-only. Tracks last mutation; Python adapters track this implicitly. |
 | `embedding` | `embedding` | `list[float]` vs `number[]` |
-| `associations` | `metadata.associations` | Top-level in Python, nested in TypeScript's metadata |
-| `session_ids` | `metadata.sessionIds` | Top-level in Python, nested in TypeScript's metadata |
-| `is_cold` | `metadata.isCold` | Top-level in Python, nested in TypeScript's metadata |
-| `cold_since` | `metadata.coldSince` | Top-level in Python, nested in TypeScript's metadata |
-| `days_at_floor` | `metadata.daysAtFloor` | Top-level in Python, nested in TypeScript's metadata |
-| `is_superseded` | `metadata.isSuperseded` | Top-level in Python, nested in TypeScript's metadata |
-| `superseded_by` | `metadata.supersededBy` | Top-level in Python, nested in TypeScript's metadata |
-| `contradicted_by` | `metadata.contradictedBy` | Top-level in Python, nested in TypeScript's metadata |
-| `is_stub` | `metadata.isStub` | Top-level in Python, nested in TypeScript's metadata |
-| `memory_type` | `semanticType` | Python uses `memory_type` (str). TypeScript uses `semanticType` (enum) because `memoryType` is already deprecated. Same value set. |
+| `associations` | `associations` | Both top-level. Python: `dict[str, Association]`. TypeScript: `Record<string, Association>`. |
+| `session_ids` | `sessionIds` | Both top-level. Python `set[str]`, TypeScript `string[]`. |
+| `is_cold` | `isCold` | Both top-level. |
+| `cold_since` | `coldSince` | Both top-level. |
+| `days_at_floor` | `daysAtFloor` | Both top-level. |
+| `is_superseded` | `isSuperseded` | Both top-level. |
+| `superseded_by` | `supersededBy` | Both top-level. |
+| `contradicted_by` | `contradictedBy` | Both top-level. |
+| `is_stub` | `isStub` | Both top-level. |
+| `memory_type` | `semanticType` | Python str field, TypeScript optional enum. Values: `"fact"`, `"preference"`, `"plan"`, `"transient_state"`, `"other"`. Used for v6 validity-window filtering. |
 | `valid_from` | `validFrom` | Python `datetime`, TypeScript Unix ms `number`. |
 | `valid_until` | `validUntil` | Python `datetime`, TypeScript Unix ms `number`. |
 | `ttl_seconds` | `ttlSeconds` | Same semantics. |
@@ -202,4 +219,14 @@ interface SearchResponse {
 
 ### Design Rationale
 
-The Python SDK uses a flat dataclass because it evolved from a research prototype where quick attribute access mattered. The TypeScript SDK groups lifecycle and tiering fields under `metadata` to keep the top-level interface clean for application developers who primarily interact with `content`, `importance`, and `retention`. The mapping table above ensures serialization layers can convert between the two representations without data loss.
+**Flat top-level fields (both SDKs).** Both `Memory` shapes keep tiering and
+lifecycle fields at the top level. The TypeScript `metadata?: Record<string,
+unknown>` is a free-form bag for caller-supplied data, NOT an envelope for SDK
+state. (An earlier draft of this spec described nested `MemoryMetadata`; the
+shipping code has been flat since early releases — the spec has been corrected.)
+
+**Materialised vs computed retention.** TypeScript stores `retention` on the
+row because its bundled adapters (Postgres, Convex) benefit from indexed
+retention filters at query time. Python's only bundled adapter is in-memory,
+where on-the-fly compute is cheap; a future Python Postgres adapter will use
+`update_retention_scores` to materialise the same field.
