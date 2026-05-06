@@ -36,6 +36,8 @@ import { assertNonEmptyString, assertUnitInterval, assertNonNegativeInt } from "
 import { setTimeout as sleep } from "node:timers/promises";
 
 const SYNAPTIC_TAGGING_THRESHOLD = 0.4;
+const STABILITY_REINFORCEMENT_THRESHOLD = 0.75;
+const INGESTION_MAINTENANCE_INTERVAL = 5;
 
 /**
  * Main cognitive memory system
@@ -50,6 +52,7 @@ export class CognitiveMemory {
   private config: ResolvedCognitiveMemoryConfig;
   private engine: CognitiveEngine;
   private conflictQueue: Array<{ newId: string; existingId: string; similarity: number }> = [];
+  private ingestionTickCounter = 0;
 
   constructor(options: {
     adapter: MemoryAdapter;
@@ -146,20 +149,18 @@ export class CognitiveMemory {
       for (const mem of extracted) {
         const embedding = await this.embedWithRetry(mem.content);
 
-        // Store the memory immediately (no inline conflict detection)
+        const similar = await this.adapter.vectorSearch(embedding, {
+          userId: this.config.userId,
+          limit: 5,
+        });
+
         const id = await this.adapter.createMemory({
           ...mem,
           embedding,
         });
         storedIds.push(id);
 
-        // Tag potential conflicts for deferred LLM resolution at tick
-        const existing = await this.adapter.vectorSearch(embedding, {
-          userId: this.config.userId,
-          limit: 5,
-        });
-
-        for (const existingMem of existing) {
+        for (const existingMem of similar) {
           if (existingMem.id !== id && existingMem.relevanceScore > 0.85) {
             // Skip if same session root (e.g. dual-perspective of same conversation)
             const newRoots = new Set((mem.sessionIds ?? []).map(s => s.replace(/_perspective_.*$/, "")));
@@ -171,6 +172,11 @@ export class CognitiveMemory {
               newId: id,
               existingId: existingMem.id,
               similarity: existingMem.relevanceScore,
+            });
+          }
+          if (existingMem.id !== id && existingMem.relevanceScore > STABILITY_REINFORCEMENT_THRESHOLD) {
+            await this.adapter.updateMemory(existingMem.id, {
+              stability: Math.min(1.0, existingMem.stability + 0.05),
             });
           }
         }
@@ -204,11 +210,19 @@ export class CognitiveMemory {
               storedMemories[i].embedding,
               storedMemories[j].embedding,
             );
-            if (sim > SYNAPTIC_TAGGING_THRESHOLD) {
+            if (sim >= SYNAPTIC_TAGGING_THRESHOLD) {
+              // Mirror Python core.py:236-238 verbatim. Above threshold the
+              // expression is algebraically equivalent to `sim * 0.5`, but the
+              // explicit `min(0.5, ...)` cap and `sim - threshold` form keep
+              // the SDKs behaviourally identical at the threshold boundary.
+              const weight = Math.min(
+                0.5,
+                0.2 + (sim - SYNAPTIC_TAGGING_THRESHOLD) * 0.5,
+              );
               await this.adapter.createOrStrengthenLink(
                 storedMemories[i].id,
                 storedMemories[j].id,
-                sim * 0.5,
+                weight,
               );
             }
           }
@@ -218,7 +232,10 @@ export class CognitiveMemory {
 
     // Optionally run maintenance
     if (this.config.runMaintenanceDuringIngestion) {
-      await this.tick();
+      this.ingestionTickCounter += 1;
+      if (this.ingestionTickCounter % INGESTION_MAINTENANCE_INTERVAL === 0) {
+        await this.tick();
+      }
     }
 
     return storedIds;
@@ -233,6 +250,9 @@ export class CognitiveMemory {
     const {
       query: queryText,
       limit = 10,
+      minRetention,
+      categories,
+      includeAssociations = true,
       sessionId,
       deepRecall = false,
       trace = false,
@@ -243,79 +263,31 @@ export class CognitiveMemory {
     const queryEmbedding = await this.embedWithRetry(queryText);
     const now = Date.now();
 
-    return this.engine.search(queryEmbedding, now, limit, sessionId, deepRecall, queryText, trace, llm);
-  }
-
-  /**
-   * Retrieve memories relevant to a query (backward-compatible simpler API)
-   *
-   * Combines semantic similarity with retention weighting.
-   */
-  async retrieve(query: RetrievalQuery): Promise<ScoredMemory[]> {
-    const {
-      query: queryText,
-      limit = 5,
-      minRetention = this.config.minRetention,
-      categories,
-      includeAssociations = true,
-    } = query;
-
-    assertNonEmptyString("query", queryText);
-
-    const queryEmbedding = await this.embedWithRetry(queryText);
-
-    const candidates = await this.adapter.vectorSearch(queryEmbedding, {
+    return this.engine.search(queryEmbedding, now, limit, sessionId, deepRecall, queryText, trace, llm, {
       userId: this.config.userId,
       categories,
       minRetention,
-      limit: limit * 3,
+      includeAssociations,
+    });
+  }
+
+  /**
+   * Retrieve memories relevant to a query (backward-compatible simpler API).
+   * Uses the same v6 scoring pipeline as search(), then maps results to ScoredMemory[].
+   */
+  async retrieve(query: RetrievalQuery): Promise<ScoredMemory[]> {
+    const response = await this.search({
+      ...query,
+      limit: query.limit ?? 5,
+      minRetention: query.minRetention ?? this.config.minRetention,
     });
 
-    const scoredCandidates = candidates
-      .map((m) => {
-        const retention = this.engine.computeRetention(m);
-        const finalScore = m.relevanceScore * retention;
-        return { ...m, retention, finalScore };
-      })
-      .filter((m) => m.retention >= minRetention)
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, limit);
-
-    const resultById = new Map<string, ScoredMemory>();
-    for (const m of scoredCandidates) resultById.set(m.id, m);
-
-    if (includeAssociations && scoredCandidates.length > 0) {
-      const associated = await this.adapter.getLinkedMemoriesMultiple(
-        scoredCandidates.map((m) => m.id),
-        0.3,
-      );
-
-      for (const assoc of associated) {
-        if (!resultById.has(assoc.id)) {
-          const cosine = cosineSimilarity(queryEmbedding, assoc.embedding);
-          const relevanceScore = Math.max(cosine, assoc.linkStrength);
-
-          const retention = this.engine.computeRetention(assoc);
-          if (retention < minRetention) continue;
-
-          resultById.set(assoc.id, {
-            ...assoc,
-            retention,
-            relevanceScore,
-            finalScore: relevanceScore * retention,
-          });
-        }
-      }
-    }
-
-    const results = Array.from(resultById.values())
-      .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, limit);
-
-    await this.strengthenMemories(results);
-    await this.strengthenLinks(results.map((m) => m.id));
-
-    return results;
+    return response.results.map((result) => ({
+      ...result.memory,
+      retention: result.retentionScore,
+      relevanceScore: result.relevanceScore,
+      finalScore: result.combinedScore,
+    }));
   }
 
   /**
@@ -507,11 +479,25 @@ export class CognitiveMemory {
       const conflict = await detectConflict(existingMem, newMem, llm, this.config);
 
       if (conflict === "CONTRADICTION" || conflict === "UPDATE") {
+        // Demote-and-keep: preserve the original memory as an audit trail.
+        // Mirror Python's algorithm at sdks/python/src/cognitive_memory/core.py:389-405.
+        const wasCore = existingMem.category === "core";
+        const liftedImportance = Math.max(
+          existingMem.importance,
+          newMem.importance,
+        );
+
         await this.adapter.updateMemory(existingId, {
-          content: newMem.content,
-          importance: Math.max(existingMem.importance, newMem.importance),
-          lastAccessed: Date.now(),
-          contradictedBy: conflict === "CONTRADICTION" ? newId : null,
+          contradictedBy: newId,
+          category: wasCore ? "semantic" : existingMem.category,
+        });
+
+        await this.adapter.updateMemory(newId, {
+          importance: liftedImportance,
+          category:
+            conflict === "CONTRADICTION" && wasCore
+              ? "core"
+              : newMem.category,
         });
         resolved++;
       }

@@ -10,6 +10,7 @@ import type { Memory, ScoredMemory } from "../core/types";
 import { createDefaultMemory } from "../core/types";
 import { cosineSimilarity } from "../utils/embeddings";
 import { MemoryAdapter, type MemoryFilters } from "./base";
+import { DuplicateMemoryError, MemoryNotFoundError } from "./errors";
 
 export class InMemoryAdapter extends MemoryAdapter {
   /** Hot store — active memories */
@@ -46,6 +47,9 @@ export class InMemoryAdapter extends MemoryAdapter {
     memory: Omit<Memory, "id" | "createdAt" | "updatedAt">,
   ): Promise<string> {
     const id = this.idFactory();
+    if (this.hot.has(id) || this.cold.has(id) || this.stubs.has(id)) {
+      throw new DuplicateMemoryError(id);
+    }
     const now = this.now();
     const m = createDefaultMemory({
       ...memory,
@@ -68,18 +72,21 @@ export class InMemoryAdapter extends MemoryAdapter {
   }
 
   async queryMemories(filters: MemoryFilters): Promise<Memory[]> {
-    let items = [
-      ...Array.from(this.hot.values()),
-      ...Array.from(this.cold.values()),
-    ];
+    let items = Array.from(this.hot.values());
+
+    if (filters.includeCold) {
+      items = [...items, ...Array.from(this.cold.values())];
+    }
+    if (filters.includeStubs) {
+      items = [...items, ...Array.from(this.stubs.values())];
+    }
 
     // Exclude superseded by default
     if (!filters.includeSuperseded) {
       items = items.filter((m) => !m.isSuperseded);
     }
 
-    // Exclude stubs from general queries
-    items = items.filter((m) => !m.isStub);
+    if (!filters.includeStubs) items = items.filter((m) => !m.isStub);
 
     if (filters.userId)
       items = items.filter((m) => m.userId === filters.userId);
@@ -100,7 +107,9 @@ export class InMemoryAdapter extends MemoryAdapter {
 
   async updateMemory(id: string, updates: Partial<Memory>): Promise<void> {
     const tier = this.getTier(id);
-    if (!tier) return;
+    if (!tier) {
+      throw new MemoryNotFoundError(id);
+    }
     const existing = tier.get(id)!;
     tier.set(id, {
       ...existing,
@@ -134,9 +143,11 @@ export class InMemoryAdapter extends MemoryAdapter {
   ): Promise<ScoredMemory[]> {
     let items = Array.from(this.hot.values());
 
-    // Include cold store memories in search if needed
-    if (filters?.includeSuperseded) {
+    if (filters?.includeCold) {
       items = [...items, ...Array.from(this.cold.values())];
+    }
+    if (filters?.includeStubs) {
+      items = [...items, ...Array.from(this.stubs.values())];
     }
 
     // Apply filters
@@ -148,7 +159,7 @@ export class InMemoryAdapter extends MemoryAdapter {
       items = items.filter((m) => m.retention >= filters.minRetention!);
     if (!filters?.includeSuperseded)
       items = items.filter((m) => !m.isSuperseded);
-    items = items.filter((m) => !m.isStub);
+    if (!filters?.includeStubs) items = items.filter((m) => !m.isStub);
 
     return items
       .map((m) => {
@@ -175,9 +186,13 @@ export class InMemoryAdapter extends MemoryAdapter {
     if (queryTokens.length === 0) return [];
 
     let items = Array.from(this.hot.values());
+    if (filters?.includeCold)
+      items = [...items, ...Array.from(this.cold.values())];
+    if (filters?.includeStubs)
+      items = [...items, ...Array.from(this.stubs.values())];
     if (!filters?.includeSuperseded)
       items = items.filter((m) => !m.isSuperseded);
-    items = items.filter((m) => !m.isStub);
+    if (!filters?.includeStubs) items = items.filter((m) => !m.isStub);
     if (filters?.userId)
       items = items.filter((m) => m.userId === filters.userId);
 

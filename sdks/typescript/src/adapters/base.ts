@@ -37,6 +37,12 @@ export interface MemoryFilters {
 
   /** Include superseded memories in results */
   includeSuperseded?: boolean;
+
+  /** Include cold memories in retrieval/query results */
+  includeCold?: boolean;
+
+  /** Include archived stubs in results */
+  includeStubs?: boolean;
 }
 
 /**
@@ -60,7 +66,10 @@ export abstract class MemoryAdapter {
 
   abstract getMemory(id: string): Promise<Memory | null>;
 
-  abstract getMemories(ids: string[]): Promise<Memory[]>;
+  async getMemories(ids: string[]): Promise<Memory[]> {
+    const memories = await Promise.all(ids.map((id) => this.getMemory(id)));
+    return memories.filter((memory): memory is Memory => memory !== null);
+  }
 
   abstract queryMemories(filters: MemoryFilters): Promise<Memory[]>;
 
@@ -92,6 +101,24 @@ export abstract class MemoryAdapter {
     _filters?: MemoryFilters,
   ): Promise<ScoredMemory[]> {
     return [];
+  }
+
+  // ------------------------------------------------------------------
+  // Batch update
+  // ------------------------------------------------------------------
+
+  /**
+   * Update multiple memories in a single operation. Atomic where the
+   * backend supports it. Default implementation falls back to N
+   * serial `updateMemory` calls; override for true atomicity.
+   *
+   * Spec: spec/adapter-interface.md lines 277-287.
+   */
+  async batchUpdate(memories: Memory[]): Promise<void> {
+    for (const m of memories) {
+      const { id, createdAt: _createdAt, ...updates } = m;
+      await this.updateMemory(id, updates);
+    }
   }
 
   // ------------------------------------------------------------------

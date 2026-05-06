@@ -25,6 +25,7 @@ from .adapters.base import MemoryAdapter
 from .adapters.memory import InMemoryAdapter
 from .engine import CognitiveEngine, _ensure_bidirectional_association
 from .extraction import MemoryExtractor
+from .llm import LLMProvider
 from .embeddings import (
     EmbeddingProvider,
     OpenAIEmbeddings,
@@ -75,11 +76,14 @@ class CognitiveMemory:
         config: Optional[CognitiveMemoryConfig] = None,
         embedder: Optional[EmbeddingProvider | Literal["openai", "hash"]] = None,
         adapter: Optional[MemoryAdapter] = None,
+        llm: Optional[LLMProvider] = None,
+        user_id: str = "default",
     ):
         self.config = config or CognitiveMemoryConfig()
         self._adapter = adapter or InMemoryAdapter()
-        self._engine = CognitiveEngine(self._adapter, self.config)
-        self._extractor = MemoryExtractor(self.config)
+        self._user_id = user_id
+        self._engine = CognitiveEngine(self._adapter, self.config, user_id=user_id)
+        self._extractor = MemoryExtractor(self.config, llm=llm)
 
         if embedder is None or embedder == "openai":
             self._embedder = OpenAIEmbeddings(
@@ -115,6 +119,7 @@ class CognitiveMemory:
         now = timestamp or datetime.now()
 
         mem = Memory(
+            user_id=self._user_id,
             content=content,
             category=category,
             importance=importance,
@@ -128,7 +133,9 @@ class CognitiveMemory:
 
         # Tag potential conflicts for deferred resolution at tick
         if mem.embedding is not None:
-            similar = await self._adapter.search_similar(mem.embedding, top_k=5)
+            similar = await self._adapter.search_similar(
+                mem.embedding, top_k=5, user_id=self._user_id,
+            )
             for existing_mem, sim in similar:
                 if existing_mem.id != mem.id and sim > CONFLICT_SIMILARITY_THRESHOLD:
                     self._conflict_queue.append((mem.id, existing_mem.id, sim))
@@ -137,7 +144,14 @@ class CognitiveMemory:
         return mem
 
     async def add_memory_object(self, memory: Memory) -> Memory:
-        """Add a pre-built Memory object. Embeds if needed."""
+        """Add a pre-built Memory object. Embeds if needed.
+
+        If the memory carries the placeholder user_id ('default'), it inherits
+        this CognitiveMemory's configured user_id; an explicit non-default
+        user_id is preserved.
+        """
+        if memory.user_id == "default":
+            memory.user_id = self._user_id
         if memory.embedding is None:
             memory.embedding = self._embedder.embed(memory.content)
         await self._adapter.create(memory)
@@ -188,8 +202,11 @@ class CognitiveMemory:
 
                 _queued = 0
                 for mem in memories:
+                    mem.user_id = self._user_id
                     if mem.embedding is not None:
-                        similar = await self._adapter.search_similar(mem.embedding, top_k=5)
+                        similar = await self._adapter.search_similar(
+                            mem.embedding, top_k=5, user_id=self._user_id,
+                        )
                         reinforced = []
                         for existing_mem, sim in similar:
                             if existing_mem.id == mem.id:
@@ -220,6 +237,7 @@ class CognitiveMemory:
                 raw_contents = [m.content for m in raw_memories]
                 raw_embeddings = self._embedder.embed_batch(raw_contents)
                 for mem, emb in zip(raw_memories, raw_embeddings):
+                    mem.user_id = self._user_id
                     mem.embedding = emb
                     await self._adapter.create(mem)
                     stored.append(mem)
@@ -227,7 +245,9 @@ class CognitiveMemory:
         if not stored:
             return []
 
-        # Synaptic tagging: link co-ingested memories gated by similarity
+        # Synaptic tagging: link co-ingested memories gated by similarity.
+        # Writes to BOTH the per-memory `Memory.associations` cache (used at
+        # retrieval-time decay) AND the adapter-level link table (spec contract).
         if len(stored) > 1:
             for mem_a, mem_b in combinations(stored, 2):
                 if mem_a.embedding is None or mem_b.embedding is None:
@@ -236,6 +256,9 @@ class CognitiveMemory:
                 if sim >= INGESTION_ASSOCIATION_THRESHOLD:
                     weight = min(0.5, INGESTION_ASSOCIATION_BASE_WEIGHT + (sim - INGESTION_ASSOCIATION_THRESHOLD) * 0.5)
                     _ensure_bidirectional_association(mem_a, mem_b, weight, now)
+                    await self._adapter.create_or_strengthen_link(
+                        mem_a.id, mem_b.id, weight,
+                    )
             await self._adapter.batch_update(stored)
 
         # Periodic maintenance (skip during batch benchmarks)
@@ -413,9 +436,9 @@ class CognitiveMemory:
     # ------------------------------------------------------------------
 
     async def get_stats(self) -> dict:
-        """Return current memory system statistics."""
+        """Return current memory system statistics scoped to this user."""
         now = datetime.now()
-        all_mems = await self._adapter.all_active()
+        all_mems = await self._adapter.all_active(user_id=self._user_id)
 
         core_count = sum(1 for m in all_mems if m.category == MemoryCategory.CORE)
         faint_count = sum(
@@ -429,10 +452,10 @@ class CognitiveMemory:
         avg_retention = sum(retentions) / len(retentions) if retentions else 0.0
 
         return {
-            "total_memories": await self._adapter.total_count(),
-            "hot_memories": await self._adapter.hot_count(),
-            "cold_memories": await self._adapter.cold_count(),
-            "stub_memories": await self._adapter.stub_count(),
+            "total_memories": await self._adapter.total_count(user_id=self._user_id),
+            "hot_memories": await self._adapter.hot_count(user_id=self._user_id),
+            "cold_memories": await self._adapter.cold_count(user_id=self._user_id),
+            "stub_memories": await self._adapter.stub_count(user_id=self._user_id),
             "core_memories": core_count,
             "faint_memories": faint_count,
             "avg_retention": avg_retention,

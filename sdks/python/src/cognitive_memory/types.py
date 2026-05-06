@@ -85,6 +85,7 @@ class CognitiveMemoryConfig:
     # LLM rerank (v6)
     rerank_enabled: bool = False
     k_rerank: int = 10  # top candidates to send to LLM for reranking
+    rerank_factor: int = 1  # multiplier for candidate pool before reranking
     rerank_model: Optional[str] = None  # defaults to extraction_model if None
 
     # Decay model
@@ -119,6 +120,7 @@ class Memory:
     """Core memory object - Table 1 in the paper."""
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str = "default"  # owner; enables multi-tenant scoping
     content: str = ""
     category: MemoryCategory = MemoryCategory.EPISODIC
     importance: float = 0.5  # [0, 1] LLM-assessed at extraction
@@ -183,7 +185,7 @@ class SearchResult:
     memory: Memory
     relevance_score: float  # cosine similarity
     retention_score: float  # R(m) from decay
-    combined_score: float   # relevance * retention
+    combined_score: float   # relevance * retention^alpha
     is_associative: bool = False  # came via association, not direct match
     via_deep_recall: bool = False
     evidence_chains: list[list[str]] = field(default_factory=list)  # v6: bridge paths (memory ID chains)
@@ -214,3 +216,15 @@ class SearchResponse:
     results: list[SearchResult] = field(default_factory=list)
     evidence_chains: list[list[str]] = field(default_factory=list)
     trace: Optional[SearchTrace] = None
+
+    def __len__(self) -> int:
+        """Backward-compatible list length for callers that treated search() as results."""
+        return len(self.results)
+
+    def __iter__(self):
+        """Backward-compatible iteration over search results."""
+        return iter(self.results)
+
+    def __getitem__(self, index):
+        """Backward-compatible indexing into search results."""
+        return self.results[index]

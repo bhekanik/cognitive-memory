@@ -33,7 +33,8 @@ from .embeddings import (
     HashEmbeddings,
     cosine_similarity,
 )
-from .adapters import MemoryAdapter, InMemoryAdapter
+from .llm import LLMProvider, OpenAILLMProvider, LLMUsage
+from .adapters import MemoryAdapter, InMemoryAdapter, JsonlFileAdapter
 
 __version__ = "0.4.0"
 
@@ -59,7 +60,12 @@ __all__ = [
     "OpenAIEmbeddings",
     "HashEmbeddings",
     "cosine_similarity",
+    # LLM provider
+    "LLMProvider",
+    "OpenAILLMProvider",
+    "LLMUsage",
     # Adapters
     "MemoryAdapter",
     "InMemoryAdapter",
+    "JsonlFileAdapter",
 ]

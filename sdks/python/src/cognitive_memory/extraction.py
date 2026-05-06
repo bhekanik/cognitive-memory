@@ -16,6 +16,7 @@ import re
 from datetime import datetime
 from typing import Optional
 
+from .llm import LLMProvider, OpenAILLMProvider
 from .types import Memory, MemoryCategory, CognitiveMemoryConfig
 
 VALID_MEMORY_TYPES = {"fact", "preference", "plan", "transient_state", "other"}
@@ -118,15 +119,15 @@ Write one clear paragraph. Preserve specific names, dates, numbers, and preferen
 class MemoryExtractor:
     """Extracts structured memories from conversation text."""
 
-    def __init__(self, config: CognitiveMemoryConfig):
+    def __init__(
+        self,
+        config: CognitiveMemoryConfig,
+        llm: Optional[LLMProvider] = None,
+    ):
         self.config = config
-        self._client = None
-
-    def _get_client(self):
-        if self._client is None:
-            from openai import OpenAI
-            self._client = OpenAI(timeout=120.0)
-        return self._client
+        self._llm: LLMProvider = llm or OpenAILLMProvider(
+            model=config.extraction_model
+        )
 
     def _call_llm(self, prompt: str, max_tokens: int = 1000) -> str:
         text, _ = self._call_llm_with_usage(prompt, max_tokens=max_tokens)
@@ -287,35 +288,12 @@ class MemoryExtractor:
     def _call_llm_with_usage(
         self, prompt: str, max_tokens: int = 200, model: Optional[str] = None,
     ) -> tuple[str, dict]:
-        """Call LLM and return (text, usage_dict) where usage_dict has prompt_tokens, completion_tokens."""
-        import time as _time
-        client = self._get_client()
-        used_model = model or self.config.extraction_model
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                resp = client.chat.completions.create(
-                    model=used_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                    max_tokens=max_tokens,
-                )
-                text = resp.choices[0].message.content.strip()
-                usage = {}
-                if hasattr(resp, "usage") and resp.usage is not None:
-                    usage = {
-                        "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0) or 0,
-                        "completion_tokens": getattr(resp.usage, "completion_tokens", 0) or 0,
-                    }
-                return text, usage
-            except Exception as e:
-                err_str = str(e).lower()
-                is_retryable = any(k in err_str for k in ("500", "server_error", "502", "503", "529", "rate_limit", "timeout", "connection"))
-                if attempt < max_retries - 1 and is_retryable:
-                    delay = min(60, 2 ** attempt * 2)
-                    _time.sleep(delay)
-                    continue
-                raise
+        """Call the injected :class:`LLMProvider` and return (text, usage)."""
+        return self._llm.complete_with_usage(
+            prompt,
+            max_tokens=max_tokens,
+            model=model or self.config.extraction_model,
+        )
 
     def rerank_candidates(
         self, query: str, candidates: list[str],

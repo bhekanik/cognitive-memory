@@ -61,9 +61,15 @@ class CognitiveEngine:
     all the temporal dynamics described in the paper.
     """
 
-    def __init__(self, adapter: MemoryAdapter, config: CognitiveMemoryConfig):
+    def __init__(
+        self,
+        adapter: MemoryAdapter,
+        config: CognitiveMemoryConfig,
+        user_id: str = "default",
+    ):
         self.adapter = adapter
         self.config = config
+        self.user_id = user_id
 
     # ------------------------------------------------------------------
     # Decay model - Equation 1
@@ -222,7 +228,7 @@ class CognitiveEngine:
         assoc.weight = decayed
         return decayed
 
-    def get_associated_memories(
+    async def get_associated_memories(
         self,
         memory: Memory,
         now: datetime,
@@ -235,40 +241,28 @@ class CognitiveEngine:
         NOTE: This is synchronous for backward compat with engine internals.
         For InMemoryAdapter, accesses dicts directly to avoid nested async.
         """
-        results = []
+        candidates: list[tuple[str, float]] = []
         threshold = self.config.association_retrieval_threshold
 
         for assoc in memory.associations.values():
             weight = self.decay_association(assoc, now)
             if weight < threshold:
                 continue
+            candidates.append((assoc.target_id, weight))
 
-            target = self._sync_get(assoc.target_id)
-            if target is None or target.is_stub:
-                continue
-
-            results.append((target, weight))
-
-        return results
-
-    def _sync_get(self, memory_id: str) -> Optional[Memory]:
-        """Synchronous get for in-memory adapter (avoids nested async)."""
-        adapter = self.adapter
-        # For InMemoryAdapter, access dicts directly
-        if hasattr(adapter, 'hot'):
-            if memory_id in adapter.hot:
-                return adapter.hot[memory_id]
-            if memory_id in adapter.cold:
-                return adapter.cold[memory_id]
-            if memory_id in adapter.stubs:
-                return adapter.stubs[memory_id]
-        return None
+        targets = await self.adapter.get_batch([target_id for target_id, _ in candidates])
+        by_id = {target.id: target for target in targets}
+        return [
+            (target, weight)
+            for target_id, weight in candidates
+            if (target := by_id.get(target_id)) is not None and not target.is_stub
+        ]
 
     # ------------------------------------------------------------------
     # Graph expansion / bridge discovery (v6)
     # ------------------------------------------------------------------
 
-    def _expand_graph(
+    async def _expand_graph(
         self,
         anchors: list[Memory],
         now: datetime,
@@ -281,6 +275,7 @@ class CognitiveEngine:
 
         for _hop in range(max_hops):
             next_frontier: list[Memory] = []
+            candidates: list[tuple[str, float]] = []
             for mem in frontier:
                 for assoc in mem.associations.values():
                     weight = self.decay_association(assoc, now)
@@ -288,19 +283,22 @@ class CognitiveEngine:
                         continue
                     if assoc.target_id in seen_ids:
                         continue
+                    candidates.append((assoc.target_id, weight))
 
-                    target = self._sync_get(assoc.target_id)
-                    if target is None or target.is_stub:
-                        continue
-
-                    seen_ids.add(target.id)
-                    results.append((target, weight))
-                    next_frontier.append(target)
+            targets = await self.adapter.get_batch([target_id for target_id, _ in candidates])
+            by_id = {target.id: target for target in targets}
+            for target_id, weight in candidates:
+                target = by_id.get(target_id)
+                if target is None or target.is_stub or target.id in seen_ids:
+                    continue
+                seen_ids.add(target.id)
+                results.append((target, weight))
+                next_frontier.append(target)
             frontier = next_frontier
 
         return results
 
-    def _find_bridge_paths(
+    async def _find_bridge_paths(
         self,
         anchors: list[Memory],
         now: datetime,
@@ -313,14 +311,14 @@ class CognitiveEngine:
         anchor_ids = [m.id for m in anchors[:3]]  # top-3
 
         for a_id, b_id in combinations(anchor_ids, 2):
-            path = self._bfs_path(a_id, b_id, now, max_depth=3)
+            path = await self._bfs_path(a_id, b_id, now, max_depth=3)
             if path and len(path) > 2:  # non-trivial path
                 chains.append(path)
                 if len(chains) >= self.config.max_bridge_paths:
                     return chains
         return chains
 
-    def _bfs_path(
+    async def _bfs_path(
         self,
         start_id: str,
         end_id: str,
@@ -338,7 +336,7 @@ class CognitiveEngine:
                 break
 
             current_id = path[-1]
-            current = self._sync_get(current_id)
+            current = await self.adapter.get(current_id)
             if current is None:
                 continue
 
@@ -403,12 +401,22 @@ class CognitiveEngine:
         """
         search_trace = SearchTrace() if trace else None
         t_total = _time.monotonic() if trace else 0.0
+        candidate_limit = (
+            max(top_k * self.config.rerank_factor, self.config.k_rerank)
+            if self.config.rerank_enabled
+            else top_k * 3
+        )
 
         # Step 1: Similarity search in hot store
         t0 = _time.monotonic() if trace else 0.0
         include_superseded = deep_recall
         candidates = await self.adapter.search_similar(
-            query_embedding, top_k=top_k * 3, include_superseded=include_superseded,
+            query_embedding,
+            top_k=candidate_limit,
+            include_superseded=include_superseded,
+            include_cold=deep_recall,
+            include_stubs=False,
+            user_id=self.user_id,
         )
         if trace and search_trace is not None:
             search_trace.stages["vector_search"] = StageTrace(
@@ -421,7 +429,12 @@ class CognitiveEngine:
         if self.config.hybrid_search and query_text:
             t0 = _time.monotonic() if trace else 0.0
             lexical_results = await self.adapter.search_lexical(
-                query_text, top_k=self.config.k_sparse, include_superseded=include_superseded,
+                query_text,
+                top_k=self.config.k_sparse,
+                include_superseded=include_superseded,
+                include_cold=deep_recall,
+                include_stubs=False,
+                user_id=self.user_id,
             )
             # Merge: add lexical-only candidates
             seen_ids = {mem.id for mem, _ in candidates}
@@ -488,9 +501,10 @@ class CognitiveEngine:
         scored.sort(key=lambda x: x.combined_score, reverse=True)
 
         # Step 2c: LLM rerank (if enabled and extractor provided)
+        used_rerank = False
         if self.config.rerank_enabled and extractor is not None and query_text and len(scored) > 1:
             t0 = _time.monotonic() if trace else 0.0
-            k_rerank = min(self.config.k_rerank, len(scored))
+            k_rerank = min(candidate_limit, len(scored))
             to_rerank = scored[:k_rerank]
 
             reranked_indices, usage = extractor.rerank_candidates(
@@ -510,6 +524,7 @@ class CognitiveEngine:
                 if i not in used_indices:
                     reranked.append(to_rerank[i])
             scored = reranked + scored[k_rerank:]
+            used_rerank = True
 
             if trace and search_trace is not None:
                 prompt_tokens = usage.get("prompt_tokens", 0)
@@ -531,7 +546,7 @@ class CognitiveEngine:
         associative_results: list[SearchResult] = []
 
         for result in direct_results:
-            associated = self.get_associated_memories(result.memory, now)
+            associated = await self.get_associated_memories(result.memory, now)
             for assoc_mem, assoc_weight in associated:
                 if assoc_mem.id in seen_ids:
                     continue
@@ -555,7 +570,7 @@ class CognitiveEngine:
 
         # Step 3b: Graph expansion (if configured)
         if self.config.graph_expansion_hops > 0:
-            expanded = self._expand_graph(
+            expanded = await self._expand_graph(
                 [r.memory for r in direct_results],
                 now, seen_ids, self.config.graph_expansion_hops,
             )
@@ -578,7 +593,7 @@ class CognitiveEngine:
         # Bridge discovery
         evidence_chains: list[list[str]] = []
         if self.config.bridge_discovery:
-            evidence_chains = self._find_bridge_paths(
+            evidence_chains = await self._find_bridge_paths(
                 [r.memory for r in direct_results], now,
             )
 
@@ -600,10 +615,14 @@ class CognitiveEngine:
         for result in direct_results + associative_results:
             self.check_core_promotion(result.memory)
 
-        # Step 6: Strengthen associations between co-retrieved memories
+        # Step 6: Strengthen associations between co-retrieved memories.
+        # Updates the per-memory cache AND mirrors to the adapter-level link table.
         all_direct_mems = [r.memory for r in direct_results]
         for mem_a, mem_b in combinations(all_direct_mems, 2):
             self.strengthen_association(mem_a, mem_b, now)
+            await self.adapter.create_or_strengthen_link(
+                mem_a.id, mem_b.id, self.config.association_strengthen_amount,
+            )
 
         # Persist all boost/promotion/association mutations
         if modified:
@@ -611,7 +630,8 @@ class CognitiveEngine:
 
         # Combine and sort
         all_results = direct_results + associative_results
-        all_results.sort(key=lambda x: x.combined_score, reverse=True)
+        if not used_rerank:
+            all_results.sort(key=lambda x: x.combined_score, reverse=True)
 
         final = all_results[:top_k]
 
@@ -641,7 +661,7 @@ class CognitiveEngine:
         threshold_days = self.config.cold_migration_days
         updated: list[Memory] = []
 
-        for mem in await self.adapter.all_hot():
+        for mem in await self.adapter.all_hot(user_id=self.user_id):
             if mem.category == MemoryCategory.CORE:
                 continue
             if mem.is_superseded:
@@ -671,7 +691,7 @@ class CognitiveEngine:
         """
         ttl_days = self.config.cold_storage_ttl_days
 
-        for mem in await self.adapter.all_cold():
+        for mem in await self.adapter.all_cold(user_id=self.user_id):
             if mem.cold_since is None:
                 continue
             if mem.category == MemoryCategory.CORE:
@@ -703,7 +723,7 @@ class CognitiveEngine:
 
         # Find fading non-core, non-superseded memories in hot store
         fading = []
-        for mem in await self.adapter.all_hot():
+        for mem in await self.adapter.all_hot(user_id=self.user_id):
             if mem.is_superseded or mem.category == MemoryCategory.CORE:
                 continue
             retention = self.compute_retention(mem, now)
@@ -754,8 +774,9 @@ class CognitiveEngine:
                 else:
                     summary_text = "Summary: " + " | ".join(contents)
 
-                # Create summary memory
+                # Create summary memory (inherits user_id from the group)
                 summary = Memory(
+                    user_id=group[0].user_id,
                     content=summary_text,
                     category=category,
                     importance=max(m.importance for m in group),

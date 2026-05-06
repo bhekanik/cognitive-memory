@@ -36,10 +36,14 @@ class MemoryAdapter(ABC):
         """Get a memory by ID from any tier."""
         ...
 
-    @abstractmethod
     async def get_batch(self, memory_ids: list[str]) -> list[Memory]:
         """Get multiple memories by ID."""
-        ...
+        memories: list[Memory] = []
+        for memory_id in memory_ids:
+            memory = await self.get(memory_id)
+            if memory is not None:
+                memories.append(memory)
+        return memories
 
     @abstractmethod
     async def update(self, memory: Memory) -> None:
@@ -66,12 +70,16 @@ class MemoryAdapter(ABC):
         query_embedding: list[float],
         top_k: int = 10,
         include_superseded: bool = False,
+        include_cold: bool = False,
+        include_stubs: bool = False,
+        user_id: Optional[str] = None,
     ) -> list[tuple[Memory, float]]:
         """
         Search by cosine similarity.
 
         Returns list of (memory, similarity_score) sorted descending.
-        Superseded memories are excluded by default.
+        Superseded memories are excluded by default. ``user_id``, when set,
+        restricts results to that user's memories.
         """
         ...
 
@@ -84,6 +92,9 @@ class MemoryAdapter(ABC):
         query: str,
         top_k: int = 10,
         include_superseded: bool = False,
+        include_cold: bool = False,
+        include_stubs: bool = False,
+        user_id: Optional[str] = None,
     ) -> list[tuple["Memory", float]]:
         """
         BM25/lexical search. Override in adapters that support it.
@@ -164,18 +175,18 @@ class MemoryAdapter(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def all_active(self) -> list[Memory]:
-        """All memories in hot + cold (not stubs)."""
+    async def all_active(self, user_id: Optional[str] = None) -> list[Memory]:
+        """All memories in hot + cold (not stubs). Optionally filtered by user."""
         ...
 
     @abstractmethod
-    async def all_hot(self) -> list[Memory]:
-        """All memories in the hot store."""
+    async def all_hot(self, user_id: Optional[str] = None) -> list[Memory]:
+        """All memories in the hot store. Optionally filtered by user."""
         ...
 
     @abstractmethod
-    async def all_cold(self) -> list[Memory]:
-        """All memories in the cold store."""
+    async def all_cold(self, user_id: Optional[str] = None) -> list[Memory]:
+        """All memories in the cold store. Optionally filtered by user."""
         ...
 
     # ------------------------------------------------------------------
@@ -183,19 +194,19 @@ class MemoryAdapter(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def hot_count(self) -> int:
+    async def hot_count(self, user_id: Optional[str] = None) -> int:
         ...
 
     @abstractmethod
-    async def cold_count(self) -> int:
+    async def cold_count(self, user_id: Optional[str] = None) -> int:
         ...
 
     @abstractmethod
-    async def stub_count(self) -> int:
+    async def stub_count(self, user_id: Optional[str] = None) -> int:
         ...
 
     @abstractmethod
-    async def total_count(self) -> int:
+    async def total_count(self, user_id: Optional[str] = None) -> int:
         ...
 
     # ------------------------------------------------------------------

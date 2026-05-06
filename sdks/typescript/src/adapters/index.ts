@@ -1,5 +1,6 @@
 export type { MemoryFilters } from "./base";
 export { MemoryAdapter } from "./base";
+export { AdapterError, DuplicateMemoryError, MemoryNotFoundError } from "./errors";
 export { InMemoryAdapter } from "./memory";
 export type { ConvexAdapterFunctions } from "./convex";
 export { ConvexAdapter } from "./convex";

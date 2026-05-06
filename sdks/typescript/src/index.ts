@@ -1,6 +1,16 @@
 // Adapters
 export type { ConvexAdapterFunctions, JsonlFileAdapterOptions, MemoryFilters, PostgresAdapterOptions } from "./adapters";
-export { ConvexAdapter, InMemoryAdapter, JsonlFileAdapter, MemoryAdapter, PostgresAdapter, postgresSchemaSql } from "./adapters";
+export {
+  AdapterError,
+  ConvexAdapter,
+  DuplicateMemoryError,
+  InMemoryAdapter,
+  JsonlFileAdapter,
+  MemoryAdapter,
+  MemoryNotFoundError,
+  PostgresAdapter,
+  postgresSchemaSql,
+} from "./adapters";
 
 // Core types
 export type {
