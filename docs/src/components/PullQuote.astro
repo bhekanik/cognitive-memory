@@ -1,0 +1,18 @@
+---
+/**
+ * PullQuote — editorial blockquote with rule-above and citation slot.
+ *
+ * Usage:
+ *   <PullQuote cite="Tulving & Pearlstone, 1966">
+ *     A memory can exist in storage and still be practically forgotten.
+ *   </PullQuote>
+ */
+interface Props {
+  cite?: string;
+}
+const { cite } = Astro.props;
+---
+<blockquote class="editorial">
+  <slot />
+  {cite && <cite>{cite}</cite>}
+</blockquote>

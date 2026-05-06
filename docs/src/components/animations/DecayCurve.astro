@@ -7,9 +7,9 @@
 // Generate SVG path data for decay curves
 function decayCurve(baseRate: number, floor: number, importance: number = 0.5): string {
 	const points: string[] = [];
-	const width = 600;
+	const width = 680;
 	const height = 200;
-	const margin = { left: 50, top: 10, right: 20, bottom: 30 };
+	const margin = { left: 50, top: 10, right: 100, bottom: 30 };
 	const plotW = width - margin.left - margin.right;
 	const plotH = height - margin.top - margin.bottom;
 	const maxDays = 180;
@@ -30,9 +30,9 @@ const episodicPath = decayCurve(45, 0.02);
 const semanticPath = decayCurve(120, 0.02);
 const corePath = decayCurve(120, 0.60);
 
-const chartWidth = 600;
+const chartWidth = 680;
 const chartHeight = 200;
-const margin = { left: 50, top: 10, right: 20, bottom: 30 };
+const margin = { left: 50, top: 10, right: 100, bottom: 30 };
 const plotH = chartHeight - margin.top - margin.bottom;
 
 // Floor line Y positions
@@ -59,10 +59,11 @@ const regularFloorY = margin.top + (1 - 0.02) * plotH;
 		<text x={chartWidth - margin.right} y={chartHeight + 8} text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="10">180</text>
 		<text x={margin.left + (chartWidth - margin.left - margin.right) / 2} y={chartHeight + 25} text-anchor="middle" fill="var(--sl-color-gray-3)" font-size="10">Days</text>
 
-		<!-- Floor lines -->
-		<line x1={margin.left} y1={coreFloorY} x2={chartWidth - margin.right} y2={coreFloorY} stroke="var(--cm-purple)" stroke-width="1" stroke-dasharray="4 4" opacity="0.4" />
-		<text x={chartWidth - margin.right + 5} y={coreFloorY + 4} fill="var(--cm-purple)" font-size="9" opacity="0.6">core floor</text>
-		<line x1={margin.left} y1={regularFloorY} x2={chartWidth - margin.right} y2={regularFloorY} stroke="var(--sl-color-gray-4)" stroke-width="1" stroke-dasharray="4 4" opacity="0.3" />
+		<!-- Floor lines (explicit so the "never reaches zero" claim is visible) -->
+		<line x1={margin.left} y1={coreFloorY} x2={chartWidth - margin.right} y2={coreFloorY} stroke="var(--cm-purple)" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+		<text x={chartWidth - margin.right + 6} y={coreFloorY + 3} fill="var(--cm-purple)" font-size="10" opacity="0.85">0.60 core floor</text>
+		<line x1={margin.left} y1={regularFloorY} x2={chartWidth - margin.right} y2={regularFloorY} stroke="var(--cm-pink)" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+		<text x={chartWidth - margin.right + 6} y={regularFloorY + 3} fill="var(--cm-pink)" font-size="10" opacity="0.85">0.02 regular floor</text>
 
 		<!-- Decay curves -->
 		<path d={episodicPath} fill="none" stroke="var(--cm-cyan)" stroke-width="2.5" class="curve curve-episodic" />

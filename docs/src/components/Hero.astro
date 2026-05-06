@@ -1,133 +1,104 @@
 ---
-import type { Props } from '@astrojs/starlight/props';
-import Default from '@astrojs/starlight/components/Hero.astro';
+/**
+ * Editorial hero — type-led thesis.
+ *
+ * For splash-template pages: renders the thesis pull-quote, lead
+ * paragraph, three text-link CTAs, and a single pulsing decay glyph
+ * anchored asymmetrically. No graph, no badge.
+ *
+ * For non-splash pages: falls through to Starlight's default hero
+ * so docs interior pages are unaffected.
+ */
+import type { Props } from "@astrojs/starlight/props";
+import Default from "@astrojs/starlight/components/Hero.astro";
 
 const { data } = Astro.locals.starlightRoute.entry;
-const isSplash = data.template === 'splash';
+const isSplash = data.template === "splash";
 ---
 
 {isSplash ? (
-<div class="hero-wrapper">
-	<div class="hero-badge">48.5% multi-hop F1 on LoCoMo</div>
-	<div class="hero-with-visual">
-		<div class="hero-default">
-			<Default {...Astro.props}><slot /></Default>
-		</div>
-		<div class="hero-visual">
-			<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" class="hero-graph" aria-label="Animated memory graph showing interconnected memory nodes">
-				<defs>
-					<radialGradient id="glow" cx="50%" cy="50%" r="50%">
-						<stop offset="0%" stop-color="var(--cm-purple)" stop-opacity="0.15" />
-						<stop offset="100%" stop-color="var(--cm-purple)" stop-opacity="0" />
-					</radialGradient>
-				</defs>
-				<circle cx="200" cy="200" r="180" fill="url(#glow)" />
+  <header class="editorial-hero hero-reveal">
+    <span class="section-marker">Cognitive Memory · v0.4.0</span>
 
-				<!-- Connection lines -->
-				<g stroke="var(--cm-purple)" stroke-width="1.5" fill="none" opacity="0.4">
-					<line x1="200" y1="100" x2="120" y2="200" class="conn c1" />
-					<line x1="200" y1="100" x2="280" y2="200" class="conn c2" />
-					<line x1="200" y1="100" x2="200" y2="220" class="conn c3" />
-					<line x1="120" y1="200" x2="200" y2="300" class="conn c4" />
-					<line x1="280" y1="200" x2="200" y2="300" class="conn c5" />
-					<line x1="120" y1="200" x2="280" y2="200" class="conn c6" />
-					<line x1="80" y1="280" x2="120" y2="200" class="conn c7" />
-					<line x1="320" y1="280" x2="280" y2="200" class="conn c8" />
-					<line x1="80" y1="280" x2="200" y2="300" class="conn c9" />
-					<line x1="320" y1="280" x2="200" y2="300" class="conn c10" />
-				</g>
+    <blockquote class="pull-quote">
+      Agent memory is a <em>lifecycle</em>, not&nbsp;a&nbsp;database.
+    </blockquote>
 
-				<!-- Memory nodes -->
-				<circle cx="200" cy="100" r="18" fill="var(--cm-purple)" opacity="0.9" class="node n1" />
-				<text x="200" y="105" text-anchor="middle" fill="white" font-size="11" font-weight="600">Core</text>
-				<circle cx="120" cy="200" r="14" fill="var(--cm-cyan)" opacity="0.8" class="node n2" />
-				<circle cx="280" cy="200" r="14" fill="var(--cm-cyan)" opacity="0.8" class="node n3" />
-				<circle cx="200" cy="220" r="12" fill="var(--cm-green)" opacity="0.7" class="node n4" />
-				<circle cx="200" cy="300" r="10" fill="var(--cm-orange)" opacity="0.5" class="node n5" />
-				<circle cx="80" cy="280" r="8" fill="var(--sl-color-gray-3)" opacity="0.3" class="node n6" />
-				<circle cx="320" cy="280" r="8" fill="var(--sl-color-gray-3)" opacity="0.3" class="node n7" />
+    <p class="lead">
+      Most systems innovate at the edges&mdash;deciding what to
+      extract, how to retrieve. The middle, what happens to a memory
+      after it is stored and before it is retrieved, is unsettled.
+      We work there.
+    </p>
 
-				<!-- Floating particles -->
-				<circle cx="150" cy="140" r="3" fill="var(--cm-purple)" opacity="0.3" class="particle p1" />
-				<circle cx="260" cy="150" r="3" fill="var(--cm-cyan)" opacity="0.3" class="particle p2" />
-				<circle cx="170" cy="260" r="3" fill="var(--cm-green)" opacity="0.3" class="particle p3" />
-				<circle cx="240" cy="260" r="3" fill="var(--cm-orange)" opacity="0.3" class="particle p4" />
-			</svg>
-		</div>
-	</div>
-</div>
+    <div class="cta-row">
+      <a href="/getting-started/python/">read the docs &rarr;</a>
+      <a href="https://arxiv.org/abs/2510.21357">read the paper &rarr;</a>
+      <a href="https://github.com/bhekanik/cognitive-memory">github &rarr;</a>
+    </div>
+
+    <svg class="hero-glyph" viewBox="-50 -50 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle class="glyph-ring-1" cx="0" cy="0" r="14" />
+      <circle class="glyph-ring-2" cx="0" cy="0" r="14" />
+      <circle class="glyph-ring-3" cx="0" cy="0" r="14" />
+      <circle class="glyph-core" cx="0" cy="0" r="4.5" />
+    </svg>
+  </header>
 ) : (
-<Default {...Astro.props}><slot /></Default>
+  <Default {...Astro.props}><slot /></Default>
 )}
 
 <style>
-	.hero-wrapper {
-		text-align: center;
-	}
+  .editorial-hero {
+    position: relative;
+    margin: 0 auto;
+    padding: 4rem 0 3.5rem;
+    max-width: 38rem;
+  }
 
-	.hero-with-visual {
-		display: grid;
-		align-items: center;
-		gap: 2rem;
-	}
+  .editorial-hero .pull-quote {
+    margin-top: 0.5rem;
+  }
 
-	.hero-visual {
-		display: none;
-	}
+  .editorial-hero .lead {
+    font-family: var(--font-body);
+    font-size: 1.15rem;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: 32rem;
+    margin-top: 2rem;
+    text-wrap: pretty;
+  }
 
-	.hero-graph {
-		width: 100%;
-		max-width: 22rem;
-		height: auto;
-	}
+  :global(:root[data-theme="dark"]) .editorial-hero .lead {
+    color: rgba(250, 248, 243, 0.85);
+  }
 
-	/* Node pulse */
-	.node { animation: pulse 3s ease-in-out infinite; }
-	.n1 { animation-delay: 0s; }
-	.n2 { animation-delay: 0.5s; }
-	.n3 { animation-delay: 1s; }
-	.n4 { animation-delay: 1.5s; }
-	.n5 { animation-delay: 2s; }
-	.n6 { animation-delay: 2.5s; }
-	.n7 { animation-delay: 0.3s; }
+  /* The single kinetic motif — asymmetric, bottom-right of hero. */
+  .editorial-hero .hero-glyph {
+    position: absolute;
+    right: -2rem;
+    bottom: -3rem;
+    width: 12rem;
+    height: 12rem;
+    opacity: 0.85;
+    pointer-events: none;
+  }
 
-	@keyframes pulse {
-		0%, 100% { filter: brightness(1); }
-		50% { filter: brightness(1.4); }
-	}
+  @media (max-width: 800px) {
+    .editorial-hero {
+      padding: 3rem 0 2.5rem;
+    }
+    .editorial-hero .hero-glyph {
+      display: none;
+    }
+  }
 
-	/* Connection flow */
-	.conn { stroke-dasharray: 8 4; animation: flow 2s linear infinite; }
-	.c1 { animation-delay: 0s; } .c2 { animation-delay: 0.2s; }
-	.c3 { animation-delay: 0.4s; } .c4 { animation-delay: 0.6s; }
-	.c5 { animation-delay: 0.8s; } .c6 { animation-delay: 1s; }
-	.c7 { animation-delay: 1.2s; } .c8 { animation-delay: 1.4s; }
-	.c9 { animation-delay: 1.6s; } .c10 { animation-delay: 1.8s; }
-
-	@keyframes flow { to { stroke-dashoffset: -24; } }
-
-	/* Floating particles */
-	.particle { animation: float 4s ease-in-out infinite; }
-	.p1 { animation-delay: 0s; } .p2 { animation-delay: 1s; }
-	.p3 { animation-delay: 2s; } .p4 { animation-delay: 3s; }
-
-	@keyframes float {
-		0%, 100% { transform: translate(0, 0); opacity: 0.3; }
-		50% { transform: translate(5px, -8px); opacity: 0.6; }
-	}
-
-	@media (min-width: 50rem) {
-		.hero-wrapper {
-			text-align: start;
-		}
-		.hero-with-visual {
-			grid-template-columns: 7fr 4fr;
-			gap: 3%;
-		}
-		.hero-visual {
-			display: flex;
-			justify-content: center;
-			order: 2;
-		}
-	}
+  @media (min-width: 1100px) {
+    .editorial-hero .hero-glyph {
+      right: -8rem;
+      width: 14rem;
+      height: 14rem;
+    }
+  }
 </style>

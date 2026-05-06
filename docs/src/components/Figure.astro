@@ -1,0 +1,23 @@
+---
+/**
+ * Figure — wraps a child SVG/animation/image with an editorial figcaption.
+ *
+ * Usage:
+ *   <Figure number="1" caption="The lifecycle of a memory.">
+ *     <MemoryLifecycle />
+ *   </Figure>
+ */
+interface Props {
+  number: string | number;
+  caption: string;
+  className?: string;
+}
+const { number, caption, className } = Astro.props;
+---
+<figure class={`essay-figure ${className ?? ""}`}>
+  <slot />
+  <figcaption>
+    <span class="figure-label">Figure {number}</span>
+    {caption}
+  </figcaption>
+</figure>

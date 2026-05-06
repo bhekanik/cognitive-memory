@@ -1,0 +1,30 @@
+---
+/**
+ * PillRow — three falsifiable numbers, mono tabular figures.
+ *
+ * Usage:
+ *   <PillRow pills={[
+ *     { num: "48.5%", label: "multi-hop F1 on LoCoMo", qual: "1540 QA, LLM-as-judge" },
+ *     { num: "70.2%", label: "task-averaged accuracy on LongMemEval-S", qual: "500 q, comparable to ENGRAM" },
+ *     { num: "100%",  label: "critical-fact retention on LTI-Bench v2", qual: "controlled 30-day, 42 probes" },
+ *   ]} />
+ */
+interface Pill {
+  num: string;
+  label: string;
+  qual: string;
+}
+interface Props {
+  pills: Pill[];
+}
+const { pills } = Astro.props;
+---
+<div class="pill-row">
+  {pills.map((p) => (
+    <div>
+      <span class="pill-num">{p.num}</span>
+      <span class="pill-label">{p.label}</span>
+      <span class="pill-qual">{p.qual}</span>
+    </div>
+  ))}
+</div>
