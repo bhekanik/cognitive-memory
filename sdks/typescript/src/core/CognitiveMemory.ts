@@ -649,6 +649,241 @@ export class CognitiveMemory {
     return combined.length > 500 ? `${combined.slice(0, 497)}...` : combined;
   }
 
+  // -------------------------------------------------------------------
+  // CLI-equivalent surface (paper §3.4 / §3.6 + adapter pass-throughs)
+  // -------------------------------------------------------------------
+
+  /**
+   * Store a memory tagged as `core` at encoding time. Synaptic tagging
+   * shortcut (paper §3.4): the daemon assigns the protected core
+   * retention floor (0.6 default) immediately. Use sparingly — most
+   * memories should reach core status emergently.
+   */
+  async storeCore(content: string, options?: Partial<MemoryInput>): Promise<string> {
+    return this.store({ ...(options ?? {}), content, category: "core" });
+  }
+
+  /**
+   * Store multiple memories together; auto-create bidirectional
+   * associations between every pair (paper §3.6).
+   *
+   * Fast path: adapter has a native `createBatch` (RemoteAdapter does).
+   * Fan-out path: adapter doesn't — create each memory, then strengthen
+   * every pair via `createOrStrengthenLink`.
+   */
+  async storeBatch(
+    inputs: MemoryInput[],
+    linkWeight = 0.5,
+  ): Promise<string[]> {
+    if (inputs.length === 0) return [];
+
+    const native = (
+      this.adapter as unknown as {
+        createBatch?: (
+          memories: Array<Omit<Memory, "id" | "createdAt" | "updatedAt">>,
+          linkWeight?: number,
+        ) => Promise<{ ids: string[]; associationsCreated: number }>;
+      }
+    ).createBatch;
+
+    if (typeof native === "function") {
+      const memories = await Promise.all(
+        inputs.map(async (input) => {
+          const embedding = await this.embedWithRetry(input.content);
+          const now = Date.now();
+          return {
+            userId: this.config.userId,
+            content: input.content,
+            embedding,
+            category: input.category ?? "semantic",
+            importance: input.importance ?? this.config.defaultImportance,
+            stability: input.stability ?? this.config.defaultStability,
+            accessCount: 0,
+            lastAccessed: now,
+            retention: 1.0,
+            metadata: input.metadata,
+            associations: {},
+            sessionIds: [],
+            isCold: false,
+            coldSince: null,
+            daysAtFloor: 0,
+            isSuperseded: false,
+            supersededBy: null,
+            isStub: false,
+            contradictedBy: null,
+            semanticType: input.semanticType ?? "other",
+            validFrom: input.validFrom ?? null,
+            validUntil: input.validUntil ?? null,
+            ttlSeconds: input.ttlSeconds ?? null,
+            sourceTurnIds: [],
+          } as Omit<Memory, "id" | "createdAt" | "updatedAt">;
+        }),
+      );
+      const result = await native.call(this.adapter, memories, linkWeight);
+      return result.ids;
+    }
+
+    // Fan-out: store each, then link every pair.
+    const ids: string[] = [];
+    for (const input of inputs) {
+      ids.push(await this.store(input));
+    }
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        await this.adapter.createOrStrengthenLink(ids[i], ids[j], linkWeight);
+        await this.adapter.createOrStrengthenLink(ids[j], ids[i], linkWeight);
+      }
+    }
+    return ids;
+  }
+
+  // -- CRUD pass-throughs --
+
+  async getMany(ids: string[]): Promise<Memory[]> {
+    return this.adapter.getMemories(ids);
+  }
+
+  async list(filters?: {
+    category?: Memory["category"];
+    memoryType?: Memory["semanticType"];
+    includeCold?: boolean;
+    includeStubs?: boolean;
+    includeSuperseded?: boolean;
+    limit?: number;
+  }): Promise<Memory[]> {
+    return this.adapter.queryMemories({
+      userId: this.config.userId,
+      categories: filters?.category ? [filters.category] : undefined,
+      includeCold: filters?.includeCold ?? false,
+      includeStubs: filters?.includeStubs ?? false,
+      includeSuperseded: filters?.includeSuperseded ?? false,
+      limit: filters?.limit,
+    });
+  }
+
+  async updatePartial(id: string, updates: Partial<Memory>): Promise<void> {
+    await this.adapter.updateMemory(id, updates);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.adapter.deleteMemory(id);
+  }
+
+  async deleteMany(ids: string[]): Promise<void> {
+    await this.adapter.deleteMemories(ids);
+  }
+
+  // -- Search variants --
+
+  async searchLexical(query: string): Promise<ScoredMemory[]> {
+    return this.adapter.searchLexical(query, { userId: this.config.userId });
+  }
+
+  async vectorSearch(embedding: number[]): Promise<ScoredMemory[]> {
+    return this.adapter.vectorSearch(embedding, { userId: this.config.userId });
+  }
+
+  // -- Links --
+
+  async unlink(sourceId: string, targetId: string): Promise<void> {
+    await this.adapter.deleteLink(sourceId, targetId);
+  }
+
+  async linked(
+    memoryId: string,
+    minStrength = 0.0,
+  ): Promise<Array<Memory & { linkStrength: number }>> {
+    return this.adapter.getLinkedMemories(memoryId, minStrength);
+  }
+
+  async linkedMany(
+    memoryIds: string[],
+    minStrength = 0.0,
+  ): Promise<Array<Memory & { linkStrength: number }>> {
+    return this.adapter.getLinkedMemoriesMultiple(memoryIds, minStrength);
+  }
+
+  // -- Lifecycle / consolidation --
+
+  async findFading(maxRetention: number): Promise<Memory[]> {
+    return this.adapter.findFadingMemories(this.config.userId, maxRetention);
+  }
+
+  async findStable(
+    minStability: number,
+    minAccessCount: number,
+  ): Promise<Memory[]> {
+    return this.adapter.findStableMemories(
+      this.config.userId,
+      minStability,
+      minAccessCount,
+    );
+  }
+
+  async markSuperseded(memoryIds: string[], summaryId: string): Promise<void> {
+    await this.adapter.markSuperseded(memoryIds, summaryId);
+  }
+
+  async migrateToCold(memoryId: string, coldSince?: number): Promise<void> {
+    await this.adapter.migrateToCold(memoryId, coldSince ?? Date.now());
+  }
+
+  async migrateToHot(memoryId: string): Promise<void> {
+    await this.adapter.migrateToHot(memoryId);
+  }
+
+  async convertToStub(memoryId: string, stubContent: string): Promise<void> {
+    await this.adapter.convertToStub(memoryId, stubContent);
+  }
+
+  // -- Retention --
+
+  async setRetention(memoryId: string, floor: number): Promise<void> {
+    await this.adapter.updateRetentionScores(new Map([[memoryId, floor]]));
+  }
+
+  async setRetentions(updates: Map<string, number>): Promise<void> {
+    await this.adapter.updateRetentionScores(updates);
+  }
+
+  // -- Counts --
+
+  async counts(): Promise<{
+    hot: number;
+    cold: number;
+    stub: number;
+    total: number;
+  }> {
+    return {
+      hot: await this.adapter.hotCount(),
+      cold: await this.adapter.coldCount(),
+      stub: await this.adapter.stubCount(),
+      total: await this.adapter.totalCount(),
+    };
+  }
+
+  // -- Daemon-only extras (RemoteAdapter) --
+
+  async mintBridgeToken(
+    scope: "read" | "write" | "admin" = "write",
+    ttlSeconds: number = 30 * 24 * 3600,
+  ): Promise<{ token: string; expiresAtUnix: number }> {
+    const mint = (
+      this.adapter as unknown as {
+        mintBridgeToken?: (
+          s: "read" | "write" | "admin",
+          ttl: number,
+        ) => Promise<{ token: string; expiresAtUnix: number }>;
+      }
+    ).mintBridgeToken;
+    if (typeof mint !== "function") {
+      throw new Error(
+        `mintBridgeToken requires RemoteAdapter; current adapter is ${this.adapter.constructor.name}`,
+      );
+    }
+    return mint.call(this.adapter, scope, ttlSeconds);
+  }
+
   private async embedWithRetry(text: string): Promise<number[]> {
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {

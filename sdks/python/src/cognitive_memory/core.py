@@ -471,6 +471,298 @@ class CognitiveMemory:
         self._tick_counter = 0
 
     # ------------------------------------------------------------------
+    # CLI-equivalent surface (paper §3.4 / §3.6 + adapter pass-throughs)
+    # ------------------------------------------------------------------
+
+    async def store_core(
+        self,
+        content: str,
+        importance: float = 0.7,
+        session_id: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+    ) -> Memory:
+        """Store a memory tagged as ``core`` at encoding time.
+
+        Synaptic tagging shortcut (paper §3.4): identity-critical
+        information receives the protected core retention floor (0.6 by
+        default) immediately rather than earning core status through
+        repeated retrieval. Use sparingly — most memories should reach
+        core status emergently.
+        """
+        return await self.add(
+            content=content,
+            category=MemoryCategory.CORE,
+            importance=importance,
+            session_id=session_id,
+            timestamp=timestamp,
+        )
+
+    async def store_batch(
+        self,
+        contents: list[str],
+        category: MemoryCategory = MemoryCategory.SEMANTIC,
+        importance: float = 0.5,
+        link_weight: float = 0.5,
+        session_id: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+    ) -> list[Memory]:
+        """Store multiple memories together; auto-create bidirectional
+        associations between every pair (paper §3.6: "memories form
+        bidirectional associations when they are retrieved together OR
+        created in the same context").
+
+        For ``RemoteAdapter`` (daemon-backed), delegates to the daemon's
+        native ``StoreBatch`` for atomicity. For in-process adapters,
+        creates each memory then strengthens every pair via
+        ``create_or_strengthen_link``.
+        """
+        if not contents:
+            return []
+
+        # Fast path: adapter has a native batch implementation (daemon).
+        native_batch = getattr(self._adapter, "create_batch", None)
+        if callable(native_batch):
+            now = timestamp or datetime.now()
+            mem_objs = [
+                Memory(
+                    user_id=self._user_id,
+                    content=c,
+                    category=category,
+                    importance=importance,
+                    stability=0.1 + (importance * 0.3),
+                    created_at=now,
+                    last_accessed_at=now,
+                )
+                for c in contents
+            ]
+            result = await native_batch(mem_objs, initial_link_weight=link_weight)
+            ids = result["ids"]
+            # Re-fetch the persisted records so callers get accurate state.
+            return await self._adapter.get_batch(ids)
+
+        # Fan-out path: in-process adapter. Insert each, then link pairs.
+        mems = []
+        for c in contents:
+            mems.append(
+                await self.add(
+                    content=c,
+                    category=category,
+                    importance=importance,
+                    session_id=session_id,
+                    timestamp=timestamp,
+                )
+            )
+        for a, b in combinations(mems, 2):
+            await self._adapter.create_or_strengthen_link(a.id, b.id, link_weight)
+            await self._adapter.create_or_strengthen_link(b.id, a.id, link_weight)
+        return mems
+
+    # -- CRUD pass-throughs --
+
+    async def get(self, memory_id: str) -> Optional[Memory]:
+        return await self._adapter.get(memory_id)
+
+    async def get_many(self, memory_ids: list[str]) -> list[Memory]:
+        return await self._adapter.get_batch(memory_ids)
+
+    async def list(
+        self,
+        *,
+        category: Optional[MemoryCategory] = None,
+        memory_type: Optional[str] = None,
+        include_cold: bool = False,
+        include_stubs: bool = False,
+        include_superseded: bool = False,
+    ) -> list[Memory]:
+        """Enumerate memories. Filters apply post-fetch where the adapter
+        doesn't support them natively."""
+        if include_cold:
+            mems = await self._adapter.all_active(user_id=self._user_id)
+        else:
+            mems = await self._adapter.all_hot(user_id=self._user_id)
+        if not include_stubs:
+            mems = [m for m in mems if not m.is_stub]
+        if not include_superseded:
+            mems = [m for m in mems if not m.is_superseded]
+        if category is not None:
+            mems = [m for m in mems if m.category == category]
+        if memory_type is not None:
+            mems = [m for m in mems if m.memory_type == memory_type]
+        return mems
+
+    async def update_memory(self, memory: Memory) -> None:
+        """Persist updates to a memory you've already mutated locally.
+
+        For partial updates without a local Memory object, fetch first:
+        ``mem = await cm.get(id); mem.importance = 0.9; await cm.update_memory(mem)``.
+        """
+        if memory.user_id == "default":
+            memory.user_id = self._user_id
+        await self._adapter.update(memory)
+
+    async def delete(self, memory_id: str) -> None:
+        await self._adapter.delete(memory_id)
+
+    async def delete_many(self, memory_ids: list[str]) -> None:
+        await self._adapter.delete_batch(memory_ids)
+
+    # -- Search variants --
+
+    async def search_lexical(
+        self,
+        query: str,
+        top_k: int = 10,
+    ) -> list[tuple[Memory, float]]:
+        """BM25-only search. Returns (memory, score) pairs."""
+        return await self._adapter.search_lexical(
+            query, top_k=top_k, user_id=self._user_id,
+        )
+
+    async def vector_search(
+        self,
+        embedding: list[float],
+        top_k: int = 10,
+        include_cold: bool = False,
+    ) -> list[tuple[Memory, float]]:
+        """Search by raw embedding vector — for callers that have already
+        embedded the query."""
+        return await self._adapter.search_similar(
+            embedding,
+            top_k=top_k,
+            include_cold=include_cold,
+            user_id=self._user_id,
+        )
+
+    # -- Links --
+
+    async def link(
+        self,
+        source_id: str,
+        target_id: str,
+        weight: float = 0.1,
+    ) -> None:
+        """Create or strengthen a bidirectional association."""
+        await self._adapter.create_or_strengthen_link(source_id, target_id, weight)
+        # Bidirectional — also strengthen the reverse edge.
+        if hasattr(self._adapter, "_supports_bidirectional_link") or True:
+            # `create_or_strengthen_link` is documented as bidirectional in
+            # the SDK's ABC; in-process adapters honour that. RemoteAdapter
+            # is bidirectional by default. No second call needed.
+            pass
+
+    async def unlink(self, source_id: str, target_id: str) -> None:
+        """Delete an association (bidirectional in the sense that the
+        adapter contract is bidirectional)."""
+        await self._adapter.delete_link(source_id, target_id)
+
+    async def linked(
+        self,
+        memory_id: str,
+        min_strength: float = 0.0,
+    ) -> list[tuple[Memory, float]]:
+        return await self._adapter.get_linked_memories(memory_id, min_weight=min_strength)
+
+    async def linked_many(
+        self,
+        memory_ids: list[str],
+        min_strength: float = 0.0,
+    ) -> list[tuple[Memory, float]]:
+        # Adapter has it as ``get_linked_memories_multiple``? The Python
+        # base is single-source-only; fall back to N calls with dedup.
+        seen: dict[str, tuple[Memory, float]] = {}
+        for mid in memory_ids:
+            for mem, w in await self._adapter.get_linked_memories(
+                mid, min_weight=min_strength,
+            ):
+                # Keep the strongest weight per target.
+                if mem.id not in seen or seen[mem.id][1] < w:
+                    seen[mem.id] = (mem, w)
+        return list(seen.values())
+
+    # -- Lifecycle / consolidation --
+
+    async def find_fading(
+        self,
+        max_retention: float,
+        exclude_core: bool = True,
+    ) -> list[Memory]:
+        return await self._adapter.find_fading(
+            threshold=max_retention,
+            exclude_core=exclude_core,
+        )
+
+    async def find_stable(
+        self,
+        min_stability: float,
+        min_access_count: int,
+    ) -> list[Memory]:
+        return await self._adapter.find_stable(
+            min_stability=min_stability,
+            min_access_count=min_access_count,
+        )
+
+    async def mark_superseded(
+        self,
+        memory_ids: list[str],
+        summary_id: str,
+    ) -> None:
+        await self._adapter.mark_superseded(memory_ids, summary_id)
+
+    async def migrate_to_cold(
+        self,
+        memory_id: str,
+        cold_since: Optional[datetime] = None,
+    ) -> None:
+        await self._adapter.migrate_to_cold(
+            memory_id, cold_since or datetime.now(),
+        )
+
+    async def migrate_to_hot(self, memory_id: str) -> None:
+        await self._adapter.migrate_to_hot(memory_id)
+
+    async def convert_to_stub(self, memory_id: str, stub_content: str) -> None:
+        await self._adapter.convert_to_stub(memory_id, stub_content)
+
+    # -- Retention --
+
+    async def set_retention(self, memory_id: str, floor: float) -> None:
+        """Set the retention floor for one memory."""
+        await self._adapter.update_retention_scores({memory_id: floor})
+
+    async def set_retentions(self, updates: dict[str, float]) -> None:
+        """Atomically set retention floors for many memories."""
+        await self._adapter.update_retention_scores(updates)
+
+    # -- Counts --
+
+    async def counts(self) -> dict[str, int]:
+        """Per-user tier counts: hot, cold, stub, total."""
+        return {
+            "hot": await self._adapter.hot_count(user_id=self._user_id),
+            "cold": await self._adapter.cold_count(user_id=self._user_id),
+            "stub": await self._adapter.stub_count(user_id=self._user_id),
+            "total": await self._adapter.total_count(user_id=self._user_id),
+        }
+
+    # -- Daemon-only extras (RemoteAdapter) --
+
+    async def mint_bridge_token(
+        self,
+        scope: Literal["read", "write", "admin"] = "write",
+        ttl_seconds: int = 30 * 24 * 3600,
+    ) -> dict:
+        """Mint a bearer token for the cm-http bridge. Only available
+        when this CognitiveMemory is configured with ``RemoteAdapter``.
+        """
+        mint = getattr(self._adapter, "mint_bridge_token", None)
+        if not callable(mint):
+            raise RuntimeError(
+                "mint_bridge_token requires RemoteAdapter; current adapter "
+                f"is {type(self._adapter).__name__}"
+            )
+        return await mint(scope=scope, ttl_seconds=ttl_seconds)
+
+    # ------------------------------------------------------------------
     # Convenience accessors
     # ------------------------------------------------------------------
 
