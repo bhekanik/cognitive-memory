@@ -91,6 +91,12 @@ class CognitiveMemoryConfig:
     # Decay model
     decay_model: str = "exponential"  # "exponential" | "power"
     power_decay_gamma: float = 1.4427  # 1/ln(2), calibrated match point
+    # Per-category base decay rate (β_c, days). Default mirrors the
+    # module constant `BASE_DECAY_RATES` (paper §3.2 Table 2). Made a
+    # config field in v0.5 so benchmarks/tuning can override per-trial
+    # without monkey-patching. Default factory copies the constant so
+    # mutating one config doesn't affect siblings.
+    base_decay_rates: dict = field(default_factory=lambda: dict(BASE_DECAY_RATES))
 
     # Retrieval scoring
     retrieval_score_exponent: float = 0.3  # alpha in score = sim * R^alpha
@@ -104,6 +110,18 @@ class CognitiveMemoryConfig:
     embedding_dimensions: int = 1536
     custom_extraction_instructions: Optional[str] = None
     extraction_mode: str = "semantic"  # "raw" | "semantic" | "hybrid"
+
+    def __post_init__(self):
+        # Merge user-specified base_decay_rates over defaults so a
+        # caller can override one category without losing the others.
+        # Also coerce string keys ("semantic") to MemoryCategory enum
+        # so JSON-loaded configs work.
+        merged = dict(BASE_DECAY_RATES)
+        for k, v in self.base_decay_rates.items():
+            if isinstance(k, str):
+                k = MemoryCategory(k)
+            merged[k] = v
+        self.base_decay_rates = merged
 
 
 @dataclass

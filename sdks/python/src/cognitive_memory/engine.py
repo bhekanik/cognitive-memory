@@ -90,7 +90,15 @@ class CognitiveEngine:
 
         dt_days = max(0.0, (now - last).total_seconds() / 86400.0)
 
-        beta_c = memory.base_decay_rate
+        # Read β from config (added in v0.5 so benchmarks/tuning can
+        # override per-category rates without monkey-patching the
+        # module constant). Falls back to the constant if the config
+        # is somehow missing the category key (defensive).
+        from .types import BASE_DECAY_RATES
+
+        beta_c = self.config.base_decay_rates.get(
+            memory.category, BASE_DECAY_RATES[memory.category]
+        )
         if beta_c == float("inf"):
             return 1.0  # procedural memories don't decay
 
