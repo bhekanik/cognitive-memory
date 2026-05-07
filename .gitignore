@@ -53,3 +53,8 @@ docs/.astro/
 # Lockfiles (keep package-lock.json)
 !package-lock.json
 .vercel
+
+# fastembed-rs / Hugging Face model caches (regenerated; ~130 MB per dir)
+.fastembed_cache/
+**/.fastembed_cache/
+hf-hub-cache/
