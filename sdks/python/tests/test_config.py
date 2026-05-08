@@ -114,3 +114,56 @@ def test_compute_retention_procedural_infinity_short_circuits_under_override():
     # Override episodic only (irrelevant) — procedural stays ∞ default.
     cfg = CognitiveMemoryConfig(base_decay_rates={"episodic": 30.0})
     assert _engine(cfg).compute_retention(mem, now=now) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# v0.5 tuned defaults — value lock so accidental regressions to paper-Table-2
+# values fail a test instead of silently shipping. Empirical justification:
+# `cognitive-memory-benchmarks` Phase 1 (sensitivity sweep, n=15) and Phase 2
+# (Optuna 50 trials). See
+# `cognitive-memory-benchmarks/docs/milestones/phase-2-optuna-tuning.md`.
+# ---------------------------------------------------------------------------
+
+
+def test_associative_boost_default_is_v0_5_tuned():
+    """v0.5: 0.05 (was 0.03 in paper-faithful default). Phase 1 OFAT
+    found 0.03 was the WORST value tested across [0.01, 0.10]; 0.05 hit
+    sweep best at +2pp f1. Strongest empirical signal in the campaign.
+
+    If this test fails, someone reverted associative_boost to 0.03 (or
+    paper-Table-2-default) without updating tuning evidence — confirm
+    the benchmarks Phase 1/2 results changed before changing this back.
+    """
+    cfg = CognitiveMemoryConfig()
+    assert cfg.associative_boost == 0.05, (
+        f"expected v0.5 tuned default 0.05, got {cfg.associative_boost}"
+    )
+
+
+def test_core_session_threshold_default_is_v0_5_tuned():
+    """v0.5: 2 (was 3). Phase 2 Optuna joint search: cst=1 (93%) and
+    cst=2 (91%) tied at landing in the high-fitness cluster; cst=3
+    trailed at 67% (n=12). Phase 1 OFAT had all three flat — Phase 2
+    surfaced the cst=3 underperformance in joint search."""
+    cfg = CognitiveMemoryConfig()
+    assert cfg.core_session_threshold == 2, (
+        f"expected v0.5 tuned default 2, got {cfg.core_session_threshold}"
+    )
+
+
+def test_base_decay_rates_semantic_default_is_v0_5_tuned():
+    """v0.5: semantic = 240d (was 120d in paper Table 2). Phase 1 OFAT
+    swept [30, 60, 120, 180, 240]; 240 was the maximum (f1=0.703 vs
+    default's 0.689 = +1.4pp). Phase 2 confirmed any value in
+    [200, 370] is statistically equivalent. Other categories
+    unchanged from paper Table 2."""
+    cfg = CognitiveMemoryConfig()
+    assert cfg.base_decay_rates[MemoryCategory.SEMANTIC] == 240.0, (
+        f"expected v0.5 tuned semantic β = 240.0, got "
+        f"{cfg.base_decay_rates[MemoryCategory.SEMANTIC]}"
+    )
+    # Other categories must remain paper-Table-2 — Phase 1/2 didn't
+    # surface evidence to change them.
+    assert cfg.base_decay_rates[MemoryCategory.EPISODIC] == 45.0
+    assert cfg.base_decay_rates[MemoryCategory.CORE] == 120.0
+    assert cfg.base_decay_rates[MemoryCategory.PROCEDURAL] == float("inf")

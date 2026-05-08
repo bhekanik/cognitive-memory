@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cognitive-memory"
-version = "0.4.0"
+version = "0.5.0"
 description = "Biologically-inspired agent memory with decay, consolidation, and tiered storage"
 readme = "README.md"
 license = "MIT"
@@ -37,10 +37,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bhekanik/cognitive-memory"
-Documentation = "https://bhekanik.github.io/cognitive-memory"
-Repository = "https://github.com/bhekanik/cognitive-memory"
-Issues = "https://github.com/bhekanik/cognitive-memory/issues"
+Homepage = "https://github.com/planetaryescape/cognitive-memory"
+Documentation = "https://planetaryescape.github.io/cognitive-memory"
+Repository = "https://github.com/planetaryescape/cognitive-memory"
+Issues = "https://github.com/planetaryescape/cognitive-memory/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cognitive_memory"]

@@ -18,10 +18,23 @@ class MemoryCategory(str, Enum):
     CORE = "core"
 
 
-# Base decay rates (days) by category - Table 2 in the paper
+# Base decay rates (days) by category.
+#
+# Paper §3.2 Table 2 (original): episodic=45, semantic=120,
+# procedural=inf, core=120.
+#
+# v0.5 update — semantic raised from 120 → 240 based on
+# `cognitive-memory-benchmarks` Phase 1 (sensitivity sweep at n=15)
+# and Phase 2 (Optuna, 50 trials). Phase 1 OFAT found
+# semantic=240 hits f1=0.703 vs default's 0.689 (+1.4pp); Phase 2
+# confirmed any value in [200, 370] is statistically equivalent.
+# Episodic stays at paper 45 (Phase 1 found shorter ≤30d also fine,
+# but 45d default is squarely in the working range; 90d+ hurts).
+# Procedural stays at ∞ (no decay, paper-faithful). Core stays at
+# 120 (no Phase 1/2 evidence to change).
 BASE_DECAY_RATES: dict[MemoryCategory, float] = {
     MemoryCategory.EPISODIC: 45.0,
-    MemoryCategory.SEMANTIC: 120.0,
+    MemoryCategory.SEMANTIC: 240.0,  # v0.5: tuned from paper's 120
     MemoryCategory.PROCEDURAL: float("inf"),
     MemoryCategory.CORE: 120.0,
 }
@@ -42,14 +55,28 @@ class CognitiveMemoryConfig:
 
     # Retrieval boosting (Section 3.5)
     direct_boost: float = 0.1
-    associative_boost: float = 0.03
+    # v0.5: raised from 0.03 to 0.05. Phase 1 OFAT (n=15) found 0.03
+    # was the WORST value tested; values 0.05/0.07/0.10 all hit
+    # f1=0.685 vs default's 0.664 (+2pp). Phase 2 Optuna sweep
+    # converged on assoc ∈ [0.05, 0.08] in the high-cluster trials.
+    # Strongest empirical signal in the whole tuning campaign —
+    # /docs/milestones/phase-1-sensitivity-analysis.md in benchmarks.
+    associative_boost: float = 0.05
     max_spaced_rep_multiplier: float = 2.0
     spaced_rep_interval_days: float = 7.0
 
     # Core promotion thresholds (Section 3.4)
     core_access_threshold: int = 10
     core_stability_threshold: float = 0.85
-    core_session_threshold: int = 3
+    # v0.5: lowered from 3 to 2. Phase 2 Optuna joint search showed
+    # cst=1 (93%) and cst=2 (91%) tied at landing in the high
+    # fitness cluster; cst=3 trailed at 67% (n=12). Phase 1 OFAT had
+    # all three flat at default, but joint search with the other
+    # tuned dims surfaced the cst=3 underperformance. Picking cst=2
+    # over cst=1 because the benchmarks adapter has been pinning
+    # cst=2 already (matches existing benchmark behaviour) and
+    # because cst=2 has more samples (23 vs 15) backing the rate.
+    core_session_threshold: int = 2
 
     # Associations (Section 3.6)
     association_strengthen_amount: float = 0.1
