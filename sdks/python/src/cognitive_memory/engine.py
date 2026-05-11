@@ -84,9 +84,18 @@ class CognitiveEngine:
         if memory.is_stub:
             return 0.0
 
+        # Read floor from config (added in v0.5.1 so the decay-floor
+        # ablation in cognitive-memory-benchmarks can isolate the
+        # floor mechanism's contribution). Falls back to the module
+        # constant if the config key is missing (defensive).
+        from .types import BASE_DECAY_RATES, DECAY_FLOORS
+
+        floor_key = "core" if memory.category == MemoryCategory.CORE else "regular"
+        floor = self.config.decay_floors.get(floor_key, DECAY_FLOORS[floor_key])
+
         last = memory.last_accessed_at or memory.created_at
         if last is None:
-            return memory.floor
+            return floor
 
         dt_days = max(0.0, (now - last).total_seconds() / 86400.0)
 
@@ -94,8 +103,6 @@ class CognitiveEngine:
         # override per-category rates without monkey-patching the
         # module constant). Falls back to the constant if the config
         # is somehow missing the category key (defensive).
-        from .types import BASE_DECAY_RATES
-
         beta_c = self.config.base_decay_rates.get(
             memory.category, BASE_DECAY_RATES[memory.category]
         )
@@ -113,7 +120,7 @@ class CognitiveEngine:
         else:
             raw = math.exp(-dt_days / effective_rate)
 
-        return max(memory.floor, raw)
+        return max(floor, raw)
 
     # ------------------------------------------------------------------
     # Retrieval scoring - Equation 3
@@ -677,7 +684,12 @@ class CognitiveEngine:
                 continue
 
             retention = self.compute_retention(mem, now)
-            at_floor = abs(retention - mem.floor) < 0.001
+            # v0.5.1: read floor from config to match compute_retention
+            # (decay_floors became a config field for the floor ablation).
+            from .types import DECAY_FLOORS
+            floor_key = "core" if mem.category == MemoryCategory.CORE else "regular"
+            mem_floor = self.config.decay_floors.get(floor_key, DECAY_FLOORS[floor_key])
+            at_floor = abs(retention - mem_floor) < 0.001
 
             if at_floor:
                 mem.days_at_floor += 1

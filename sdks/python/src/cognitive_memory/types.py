@@ -125,6 +125,14 @@ class CognitiveMemoryConfig:
     # mutating one config doesn't affect siblings.
     base_decay_rates: dict = field(default_factory=lambda: dict(BASE_DECAY_RATES))
 
+    # Decay floors (paper Eq 2). Made a config field in v0.5.1 so the
+    # decay-floor ablation in `cognitive-memory-benchmarks` can isolate
+    # the architectural contribution of floors (turn the core floor 0.6 →
+    # 0 and watch critical_fact_retention drop). Default factory copies
+    # `DECAY_FLOORS` so mutating one config doesn't affect siblings.
+    # Schema: {"core": float, "regular": float}.
+    decay_floors: dict = field(default_factory=lambda: dict(DECAY_FLOORS))
+
     # Retrieval scoring
     retrieval_score_exponent: float = 0.3  # alpha in score = sim * R^alpha
 
@@ -149,6 +157,13 @@ class CognitiveMemoryConfig:
                 k = MemoryCategory(k)
             merged[k] = v
         self.base_decay_rates = merged
+
+        # Same merge pattern for decay_floors. Keys stay as strings
+        # ("core", "regular") since the underlying constant is string-keyed.
+        merged_floors = dict(DECAY_FLOORS)
+        for k, v in self.decay_floors.items():
+            merged_floors[k] = v
+        self.decay_floors = merged_floors
 
 
 @dataclass

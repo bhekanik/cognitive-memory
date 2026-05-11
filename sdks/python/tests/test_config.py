@@ -167,3 +167,68 @@ def test_base_decay_rates_semantic_default_is_v0_5_tuned():
     assert cfg.base_decay_rates[MemoryCategory.EPISODIC] == 45.0
     assert cfg.base_decay_rates[MemoryCategory.CORE] == 120.0
     assert cfg.base_decay_rates[MemoryCategory.PROCEDURAL] == float("inf")
+
+
+# ---------------------------------------------------------------------------
+# v0.5.1 — decay_floors as a config field (added for the floor ablation in
+# cognitive-memory-benchmarks Phase 8). Empirical evidence in
+# `docs/milestones/phase-8-decay-floor-ablation.md`.
+# ---------------------------------------------------------------------------
+
+
+def test_decay_floors_default_matches_paper_table_2():
+    """Paper §3.2 Eq 2: core=0.60, regular=0.02. Sanity-check the
+    field's default factory matches the module constant."""
+    from cognitive_memory.types import DECAY_FLOORS
+
+    cfg = CognitiveMemoryConfig()
+    assert cfg.decay_floors == DECAY_FLOORS
+    # Must be a copy, not the same object (otherwise mutating one config
+    # silently mutates the constant + every other config).
+    assert cfg.decay_floors is not DECAY_FLOORS
+
+
+def test_decay_floors_override_replaces_one_key_only():
+    """Single-key override preserves the sibling. Same merge contract
+    as base_decay_rates."""
+    cfg = CognitiveMemoryConfig(decay_floors={"core": 0.0})
+    assert cfg.decay_floors["core"] == 0.0
+    assert cfg.decay_floors["regular"] == 0.02  # paper default preserved
+
+
+def test_compute_retention_reads_decay_floor_from_config():
+    """End-to-end: when decay_floors["core"] is overridden to 0, a core
+    memory at high age computes retention well below the paper-floor
+    of 0.60. This is the architectural test the Phase 8 ablation
+    exercises through LTI-Bench."""
+    import math
+    from datetime import datetime, timedelta, timezone
+
+    from cognitive_memory.adapters.memory import InMemoryAdapter
+    from cognitive_memory.engine import CognitiveEngine
+    from cognitive_memory.types import Memory, MemoryCategory
+
+    now = datetime(2026, 5, 11, tzinfo=timezone.utc)
+    last = now - timedelta(days=365 * 2)  # 2 years stale
+    mem = Memory(
+        user_id="alice",
+        content="critical fact",
+        category=MemoryCategory.CORE,
+        importance=0.0,
+        stability=0.5,
+        last_accessed_at=last,
+        created_at=last,
+    )
+
+    cfg_paper = CognitiveMemoryConfig()
+    cfg_no_floor = CognitiveMemoryConfig(decay_floors={"core": 0.0, "regular": 0.0})
+
+    r_paper = CognitiveEngine(adapter=InMemoryAdapter(), config=cfg_paper).compute_retention(mem, now=now)
+    r_no_floor = CognitiveEngine(adapter=InMemoryAdapter(), config=cfg_no_floor).compute_retention(mem, now=now)
+
+    # Paper floor must clamp to 0.60.
+    assert math.isclose(r_paper, 0.60, abs_tol=1e-6), f"paper-floor expected 0.60, got {r_paper}"
+    # No floor: raw decay value, well below 0.60.
+    assert r_no_floor < 0.60, (
+        f"with floor=0, retention should fall below 0.60, got {r_no_floor}"
+    )

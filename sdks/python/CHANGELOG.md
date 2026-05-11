@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.5.1](https://github.com/planetaryescape/cognitive-memory/compare/cognitive-memory-python-v0.5.0...cognitive-memory-python-v0.5.1) (2026-05-11)
+
+### Features
+
+* **config**: `decay_floors` is now a `CognitiveMemoryConfig` field (not just a module constant). Mirrors the v0.5 `base_decay_rates` change. Lets the cognitive-memory-benchmarks decay-floor ablation (Phase 8) override the floor mechanism without monkey-patching. Default factory copies `DECAY_FLOORS` so per-config mutations don't leak. `__post_init__` merges partial overrides over defaults so `{"core": 0.0}` keeps the regular floor at 0.02.
+
+### Empirical finding (Phase 8)
+
+The decay-floor ablation on LTI-Bench produced a NEGATIVE result:
+setting both floors to 0 left `critical_fact_retention` unchanged at
+100% and `decay_trivial` unchanged at 0.614 (n=3 sub-runs each arm).
+The simplest version of the architectural claim ("floors keep
+critical facts retrievable") is **falsified on LTI-Bench's 30-day
+window**. The actual mechanism keeping critical facts retrievable on
+this distribution is stability accumulation through repeated direct
+retrieval combined with the relevance-driven scoring at α=0.3.
+
+The architectural claim survives in weaker form: floors are designed
+to matter at horizons where stability decays past the clamping
+point. LTI-Bench's 30-day window doesn't reach there often enough.
+A 90d/180d ablation is the cleanest test of the strong version of
+the claim and is now Phase 8 future work.
+
+See `cognitive-memory-benchmarks/docs/milestones/phase-8-decay-floor-ablation.md`
+for full per-arm numbers + caveats. Paper §6.10 in
+`cognitive-memory-benchmarks/paper/paper.tex` has the same finding
+as a "Decay-floor ablation (negative result)" paragraph.
+
+### Tests
+
+3 new value-lock tests in `tests/test_config.py`:
+- `test_decay_floors_default_matches_paper_table_2`
+- `test_decay_floors_override_replaces_one_key_only`
+- `test_compute_retention_reads_decay_floor_from_config`
+
+11/11 SDK config tests pass (8 prior + 3 new).
+
+### Migration
+
+Additive only. Users who don't touch `decay_floors` see identical
+behaviour. Users who want to ablate or experiment can now pass
+`CognitiveMemoryConfig(decay_floors={"core": 0.0, "regular": 0.0})`
+or any partial override.
+
 ## [0.5.0](https://github.com/planetaryescape/cognitive-memory/compare/cognitive-memory-python-v0.4.0...cognitive-memory-python-v0.5.0) (2026-05-08)
 
 ### Features
