@@ -679,6 +679,12 @@ describe("CognitiveMemory", () => {
     });
 
     const now = Date.now();
+    // v0.5 default β_semantic = 240 (was paper's 120). Default importance
+    // 0.5 → B=2 → effective decay = stability*240*2. To stay below the
+    // 0.20 consolidation threshold under v0.5 defaults the memories need
+    // to be aged ~400d (yields R ≈ 0.13). Tests originally used 200d,
+    // which was fine under paper β=120 but no longer triggers consolidation
+    // at v0.5 β=240.
     for (const c of [
       "coffee a",
       "coffee b",
@@ -695,7 +701,7 @@ describe("CognitiveMemory", () => {
         }),
         stability: 0.3,
         accessCount: 0,
-        lastAccessed: now - 200 * 24 * 60 * 60 * 1000,
+        lastAccessed: now - 400 * 24 * 60 * 60 * 1000,
         retention: 0.1,
       });
     }
@@ -710,7 +716,7 @@ describe("CognitiveMemory", () => {
       stability: 0.05,
       importance: 0.1,
       accessCount: 0,
-      lastAccessed: now - 200 * 24 * 60 * 60 * 1000,
+      lastAccessed: now - 400 * 24 * 60 * 60 * 1000,
       retention: 0.01,
     });
 
@@ -737,7 +743,11 @@ describe("CognitiveMemory", () => {
       }),
       stability: 0.3,
       accessCount: 0,
-      lastAccessed: Date.now() - 150 * 24 * 60 * 60 * 1000,
+      // v0.5 β_sem=240 + default importance 0.5 (B=2) → effective rate
+      // 144d. Need ≥300d aging for R to fall below the 0.20 consolidation
+      // threshold (R ≈ 0.124 at 300d). Originally 150d; calibrated for
+      // paper β=120.
+      lastAccessed: Date.now() - 300 * 24 * 60 * 60 * 1000,
       retention: 1,
     });
 

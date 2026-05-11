@@ -560,7 +560,11 @@ export const DEFAULT_CONFIG: Omit<ResolvedCognitiveMemoryConfig, "userId"> = {
   faintThreshold: 0.15,
   decayRates: {
     episodic: 45,
-    semantic: 120,
+    // v0.5: tuned from paper Table 2's 120 → 240. cognitive-memory-
+    // benchmarks Phase 1 OFAT swept [30,60,120,180,240]; 240 hit
+    // f1=0.703 (+1.4pp). Phase 5 LoCoMo full benchmark confirmed
+    // the v0.5 defaults lift F1 +1.87pp / LLM acc +2.73pp.
+    semantic: 240,
     procedural: Number.POSITIVE_INFINITY,
     core: 120,
   },
@@ -571,13 +575,20 @@ export const DEFAULT_CONFIG: Omit<ResolvedCognitiveMemoryConfig, "userId"> = {
   retrievalScoreExponent: 0.3,
 
   directBoost: 0.1,
-  associativeBoost: 0.03,
+  // v0.5: raised from paper's 0.03 to 0.05. Phase 1 OFAT (n=15)
+  // found 0.03 was the WORST value tested across [0.01, 0.10].
+  // Strongest empirical signal in the whole tuning campaign.
+  associativeBoost: 0.05,
   maxSpacedRepMultiplier: 2.0,
   spacedRepIntervalDays: 7.0,
 
   coreAccessThreshold: 10,
   coreStabilityThreshold: 0.85,
-  coreSessionThreshold: 3,
+  // v0.5: lowered from 3 to 2. Phase 2 Optuna joint search showed
+  // cst=2 lands in the high-fitness cluster 91% of trials vs cst=3's
+  // 67% (n=23 vs n=12). Phase 1 OFAT was flat; cst=3 underperformance
+  // only surfaces in joint search with the other tuned dims.
+  coreSessionThreshold: 2,
 
   associationStrengthenAmount: 0.1,
   associationRetrievalThreshold: 0.3,
