@@ -5,6 +5,14 @@
       "destination": "/_astro/:path*"
     },
     {
+      "source": "/cognitive-memory/",
+      "destination": "/"
+    },
+    {
+      "source": "/cognitive-memory/:path*/",
+      "destination": "/:path*"
+    },
+    {
       "source": "/cognitive-memory/:path*",
       "destination": "/:path*"
     }
