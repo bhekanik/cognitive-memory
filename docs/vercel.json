@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/cognitive-memory/_astro/:path*",
+      "destination": "/_astro/:path*"
+    },
+    {
+      "source": "/cognitive-memory/:path*",
+      "destination": "/:path*"
+    }
+  ]
+}
