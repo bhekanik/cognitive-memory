@@ -200,11 +200,11 @@ starlight-tabs {
 [data-has-hero] h3 {
   font-family: var(--font-display);
   font-feature-settings: "ss01", "ss02", "kern", "liga";
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   color: var(--text-strong);
 }
 [data-has-hero] h2 {
-  font-size: clamp(2.25rem, 1.6rem + 2.5vw, 3.5rem);
+  font-size: 3.25rem;
   font-weight: 500;
   font-variation-settings: "opsz" 60, "SOFT" 50;
   line-height: 1.05;
@@ -213,12 +213,20 @@ starlight-tabs {
   text-wrap: balance;
 }
 [data-has-hero] h3 {
-  font-size: clamp(1.4rem, 1.15rem + 0.9vw, 1.75rem);
+  font-size: 1.65rem;
   font-weight: 500;
   font-variation-settings: "opsz" 30;
   line-height: 1.2;
   margin-top: 2.75rem;
   margin-bottom: 0.75rem;
+}
+@media (max-width: 720px) {
+  [data-has-hero] h2 {
+    font-size: 2.25rem;
+  }
+  [data-has-hero] h3 {
+    font-size: 1.4rem;
+  }
 }
 
 /* Section markers — small-caps mono, larger for legibility */
@@ -246,10 +254,10 @@ starlight-tabs {
 [data-has-hero] .pull-quote {
   font-family: var(--font-display);
   font-variation-settings: "opsz" 144, "SOFT" 0;
-  font-size: clamp(2.75rem, 1.5rem + 5.5vw, 5.5rem);
+  font-size: 5.25rem;
   font-weight: 400;
   line-height: 0.98;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   border: none;
   padding: 0;
   margin: 0;
@@ -266,6 +274,11 @@ starlight-tabs {
 }
 :root[data-theme='dark'][data-has-hero], :root[data-theme='dark'] [data-has-hero] .pull-quote em {
   background-image: linear-gradient(transparent 86%, var(--cm-purple) 86%, var(--cm-purple) 96%, transparent 96%);
+}
+@media (max-width: 720px) {
+  [data-has-hero] .pull-quote {
+    font-size: 3.25rem;
+  }
 }
 
 /* Editorial blockquote with rule above */
@@ -455,9 +468,9 @@ starlight-tabs {
 }
 [data-has-hero] .pill-row .pill-num {
   font-family: var(--font-mono);
-  font-size: clamp(2rem, 1.4rem + 2vw, 3rem);
+  font-size: 2.75rem;
   font-weight: 500;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   display: block;
@@ -482,6 +495,7 @@ starlight-tabs {
 }
 @media (max-width: 720px) {
   [data-has-hero] .pill-row { grid-template-columns: 1fr; gap: 1.5rem; }
+  [data-has-hero] .pill-row .pill-num { font-size: 2.25rem; }
 }
 
 /* Commitment table — six unified rows */
@@ -505,14 +519,14 @@ starlight-tabs {
   background: rgba(245, 241, 232, 0.025);
 }
 
-/* Single accent stripe on left edge of the row */
-[data-has-hero] .commitment-row::before {
+/* Accent marker. */
+[data-has-hero] .commitment-num::before {
   content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  display: block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 50%;
   background: var(--row-accent);
 }
 [data-has-hero] .commitment-row[data-accent="purple"] { --row-accent: var(--cm-purple); }
@@ -579,8 +593,66 @@ starlight-tabs {
   line-height: 1.55;
   color: var(--text-faint);
   margin: 0.875rem 0;
-  padding-left: 1rem;
-  border-left: 2px solid var(--cm-pink);
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* Docs map — task-oriented rows, no card grid. */
+[data-has-hero] .docs-map {
+  margin-block: 3.5rem;
+  border-top: 1px solid var(--rule-strong);
+}
+[data-has-hero] .docs-map a {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) 2rem;
+  gap: 1.5rem;
+  align-items: center;
+  min-height: 4.5rem;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text-strong);
+  text-decoration: none;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+[data-has-hero] .docs-map a:hover {
+  color: var(--cm-purple);
+  background: rgba(124, 58, 237, 0.03);
+}
+[data-has-hero] .docs-map-kicker,
+[data-has-hero] .docs-map-arrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+[data-has-hero] .docs-map-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+[data-has-hero] .docs-map-copy strong {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 36;
+  font-size: 1.45rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+[data-has-hero] .docs-map-copy span {
+  color: var(--text-body);
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+[data-has-hero] .docs-map-arrow {
+  justify-self: end;
+}
+@media (max-width: 720px) {
+  [data-has-hero] .docs-map a {
+    grid-template-columns: 1fr 2rem;
+    gap: 0.75rem 1rem;
+  }
+  [data-has-hero] .docs-map-kicker {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Read-more — text-led links */

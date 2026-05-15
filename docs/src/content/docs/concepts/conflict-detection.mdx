@@ -3,6 +3,8 @@ title: Conflict Detection
 description: How the system detects and resolves contradictions between new and existing memories.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## The problem
 
 Facts change. A user moves cities, changes jobs, starts a new relationship. The memory system needs to detect when new information contradicts or updates existing memories, and handle the transition gracefully.
@@ -20,12 +22,34 @@ This design avoids the O(N^2) LLM call problem that occurs when checking every n
 
 When a new memory is embedded and stored, the system piggybacks on the existing `search_similar` call (also used for stability reinforcement) to identify potential conflicts:
 
-```python
-similar = await self._adapter.search_similar(mem.embedding, top_k=5)
-for existing_mem, sim in similar:
-    if sim > 0.85:  # high similarity gate
-        self._conflict_queue.append((mem.id, existing_mem.id, sim))
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    similar = await self._adapter.search_similar(mem.embedding, top_k=5)
+    for existing_mem, sim in similar:
+        if sim > 0.85:  # high similarity gate
+            self._conflict_queue.append((mem.id, existing_mem.id, sim))
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const similar = await this.adapter.vectorSearch(memory.embedding, {
+      userId: this.config.userId,
+      limit: 5,
+    });
+
+    for (const existing of similar) {
+      if (existing.relevanceScore > 0.85) {
+        this.conflictQueue.push({
+          newId: memory.id,
+          existingId: existing.id,
+          similarity: existing.relevanceScore,
+        });
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 Key details:
 - **Similarity threshold: 0.85.** Only near-duplicate or directly contradictory memories pass this gate. At 0.6, topically related but non-conflicting memories flood the queue.
@@ -36,21 +60,44 @@ Key details:
 
 During `tick()`, the system processes the conflict queue:
 
-```python
-async def _resolve_conflict_queue(self, now, max_per_tick=50):
-    self._conflict_queue.sort(key=lambda x: x[2], reverse=True)  # highest sim first
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def _resolve_conflict_queue(self, now, max_per_tick=50):
+        self._conflict_queue.sort(key=lambda x: x[2], reverse=True)  # highest sim first
 
-    for new_id, existing_id, sim in self._conflict_queue[:max_per_tick]:
-        new_mem = await self._adapter.get(new_id)
-        existing_mem = await self._adapter.get(existing_id)
+        for new_id, existing_id, sim in self._conflict_queue[:max_per_tick]:
+            new_mem = await self._adapter.get(new_id)
+            existing_mem = await self._adapter.get(existing_id)
 
-        # Skip if either was already resolved
-        if new_mem.is_superseded or existing_mem.is_superseded:
-            continue
+            # Skip if either was already resolved
+            if new_mem.is_superseded or existing_mem.is_superseded:
+                continue
 
-        conflict_type = self._extractor.detect_conflict(new_mem, existing_mem)
-        # ... resolve if CONTRADICTION or UPDATE
-```
+            conflict_type = self._extractor.detect_conflict(new_mem, existing_mem)
+            # ... resolve if CONTRADICTION or UPDATE
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async function resolveConflictQueue(maxPerTick = 50) {
+      this.conflictQueue.sort((a, b) => b.similarity - a.similarity);
+
+      for (const candidate of this.conflictQueue.slice(0, maxPerTick)) {
+        const newMemory = await this.adapter.getMemory(candidate.newId);
+        const existing = await this.adapter.getMemory(candidate.existingId);
+        if (!newMemory || !existing) continue;
+
+        // Skip if either was already resolved
+        if (newMemory.isSuperseded || existing.isSuperseded) continue;
+
+        const conflictType = await detectConflict(newMemory, existing, llm, this.config);
+        // ... resolve if CONTRADICTION or UPDATE
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 Key details:
 - **Bounded per tick.** At most 50 candidates are processed per tick, preventing API call spikes.
@@ -79,19 +126,41 @@ When a conflict is confirmed by the LLM:
 3. **New memory inherits importance:** It takes the maximum of its own importance and the old memory's importance.
 4. **Core inheritance:** If the old memory was core and the conflict is a CONTRADICTION, the new memory is promoted to core.
 
-```python
-if conflict_type in ("CONTRADICTION", "UPDATE"):
-    was_core = existing.category == MemoryCategory.CORE
-    # Demote old
-    if was_core:
-        existing.category = MemoryCategory.SEMANTIC
-    existing.contradicted_by = new_memory.id
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    if conflict_type in ("CONTRADICTION", "UPDATE"):
+        was_core = existing.category == MemoryCategory.CORE
+        # Demote old
+        if was_core:
+            existing.category = MemoryCategory.SEMANTIC
+        existing.contradicted_by = new_memory.id
 
-    # Boost new
-    new_memory.importance = max(new_memory.importance, existing.importance)
-    if conflict_type == "CONTRADICTION" and was_core:
-        new_memory.category = MemoryCategory.CORE
-```
+        # Boost new
+        new_memory.importance = max(new_memory.importance, existing.importance)
+        if conflict_type == "CONTRADICTION" and was_core:
+            new_memory.category = MemoryCategory.CORE
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    if (conflictType === "CONTRADICTION" || conflictType === "UPDATE") {
+      const wasCore = existing.category === "core";
+      // Demote old
+      if (wasCore) {
+        existing.category = "semantic";
+      }
+      existing.contradictedBy = newMemory.id;
+
+      // Boost new
+      newMemory.importance = Math.max(newMemory.importance, existing.importance);
+      if (conflictType === "CONTRADICTION" && wasCore) {
+        newMemory.category = "core";
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### OVERLAP or NONE
 

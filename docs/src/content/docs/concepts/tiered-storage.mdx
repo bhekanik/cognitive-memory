@@ -3,6 +3,8 @@ title: Tiered Storage
 description: How memories move through hot, cold, and stub tiers based on their retention.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Three storage tiers
 
 Cognitive Memory uses a tiered storage model that mirrors how the brain manages memories at different stages of consolidation.
@@ -37,35 +39,72 @@ A memory moves from hot to cold when:
 
 Superseded memories (originals that were consolidated) move to cold immediately.
 
-```python
-async def run_cold_migration(self, now):
-    for mem in await self.adapter.all_hot():
-        if mem.category == MemoryCategory.CORE:
-            continue
-        if mem.is_superseded:
-            await self.adapter.migrate_to_cold(mem.id, now)
-            continue
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def run_cold_migration(self, now):
+        for mem in await self.adapter.all_hot():
+            if mem.category == MemoryCategory.CORE:
+                continue
+            if mem.is_superseded:
+                await self.adapter.migrate_to_cold(mem.id, now)
+                continue
 
-        retention = self.compute_retention(mem, now)
-        at_floor = abs(retention - mem.floor) < 0.001
+            retention = self.compute_retention(mem, now)
+            at_floor = abs(retention - mem.floor) < 0.001
 
-        if at_floor:
-            mem.days_at_floor += 1
-        else:
-            mem.days_at_floor = 0
+            if at_floor:
+                mem.days_at_floor += 1
+            else:
+                mem.days_at_floor = 0
 
-        if mem.days_at_floor >= threshold_days:
-            await self.adapter.migrate_to_cold(mem.id, now)
-```
+            if mem.days_at_floor >= threshold_days:
+                await self.adapter.migrate_to_cold(mem.id, now)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async function runColdMigration(now: number) {
+      for (const memory of await adapter.allHot()) {
+        if (memory.category === "core") continue;
+        if (memory.isSuperseded) {
+          await adapter.migrateToCold(memory.id, now);
+          continue;
+        }
+
+        const retention = computeRetention(memory, now);
+        const atFloor = Math.abs(retention - getFloor(memory)) < 0.001;
+        const daysAtFloor = atFloor ? memory.daysAtFloor + 1 : 0;
+
+        if (daysAtFloor >= thresholdDays) {
+          await adapter.updateMemory(memory.id, { daysAtFloor });
+          await adapter.migrateToCold(memory.id, now);
+        }
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### Reactivation to hot
 
 When a cold memory is retrieved through an association link during search, it's migrated back to hot:
 
-```python
-if result.memory.is_cold:
-    await self.adapter.migrate_to_hot(result.memory.id)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    if result.memory.is_cold:
+        await self.adapter.migrate_to_hot(result.memory.id)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    if (result.memory.isCold) {
+      await adapter.migrateToHot(result.memory.id);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 This resets `is_cold`, `cold_since`, and `days_at_floor`. The memory gets a retrieval boost and starts decaying from a fresh `last_accessed_at` timestamp.
 
@@ -81,25 +120,59 @@ After spending `cold_storage_ttl_days` (default: 180) in cold storage, a memory 
 
 Stubs exist as tombstones — they record that a memory once existed and provide a brief summary of what it contained. They're never returned in search results.
 
-```python
-async def run_cold_ttl_expiry(self, now):
-    for mem in await self.adapter.all_cold():
-        if mem.category == MemoryCategory.CORE:
-            continue
-        days_cold = (now - mem.cold_since).total_seconds() / 86400.0
-        if days_cold >= ttl_days:
-            stub_content = f"[archived] {mem.content[:200]}"
-            await self.adapter.convert_to_stub(mem.id, stub_content)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def run_cold_ttl_expiry(self, now):
+        for mem in await self.adapter.all_cold():
+            if mem.category == MemoryCategory.CORE:
+                continue
+            days_cold = (now - mem.cold_since).total_seconds() / 86400.0
+            if days_cold >= ttl_days:
+                stub_content = f"[archived] {mem.content[:200]}"
+                await self.adapter.convert_to_stub(mem.id, stub_content)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async function runColdTtlExpiry(now: number) {
+      for (const memory of await adapter.allCold()) {
+        if (memory.category === "core" || memory.coldSince === null) continue;
+        const daysCold = (now - memory.coldSince) / (1000 * 60 * 60 * 24);
+        if (daysCold >= ttlDays) {
+          await adapter.convertToStub(
+            memory.id,
+            `[archived] ${memory.content.slice(0, 200)}`,
+          );
+        }
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    cold_migration_days=7,       # days at floor before cold migration
-    cold_storage_ttl_days=180,   # days in cold before stub conversion
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        cold_migration_days=7,       # days at floor before cold migration
+        cold_storage_ttl_days=180,   # days in cold before stub conversion
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      coldMigrationDays: 7, // days at floor before cold migration
+      coldStorageTtlDays: 180, // days in cold before stub conversion
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ## Lifecycle diagram
 

@@ -13,7 +13,7 @@ These are the current logged results used by the May 2026 paper draft. Older Run
   data={[
     { benchmark: 'LoCoMo overall F1', primary: 44.8 },
     { benchmark: 'LoCoMo multi-hop F1', primary: 48.5 },
-    { benchmark: 'LongMemEval-S accuracy', primary: 70.2 },
+    { benchmark: 'LongMemEval-S accuracy', primary: 71.6 },
     { benchmark: 'LTI-Bench accuracy', primary: 88.1 },
     { benchmark: 'LTI-Bench F1', primary: 69.7 },
   ]}
@@ -28,7 +28,7 @@ These are the current logged results used by the May 2026 paper draft. Older Run
 | Benchmark | What it stresses | Current result |
 |-----------|------------------|----------------|
 | LoCoMo | Long conversational recall and multi-hop QA | 44.8% overall token F1; 48.5% multi-hop token F1 |
-| LongMemEval-S | Long-horizon human-assistant memory across task types | 70.2% task-averaged accuracy |
+| LongMemEval-S | Long-horizon human-assistant memory across task types | 71.6% task-averaged accuracy; 72.6% overall accuracy |
 | LTI-Bench v2 | Controlled lifecycle behavior over 30 simulated days | 88.1% accuracy; 69.7% F1; 100% critical retention |
 
 ## Read the benchmarks by lifecycle stage
@@ -44,20 +44,20 @@ That means a high score on one benchmark should not be treated as a universal me
 Cognitive Memory is competitive under the stated protocols, with its strongest evidence on lifecycle behavior and multi-hop recall:
 
 - LoCoMo multi-hop F1 is 48.5%, compared with Mem0 28.4% and FadeMem 29.4% under the cited comparison protocol.
-- LongMemEval-S is 70.2%, competitive with ENGRAM-class single-stage memory systems but not a current leaderboard claim.
+- LongMemEval-S is 71.6%, effectively tied with ENGRAM-class single-stage memory systems but not a current leaderboard claim.
 - LTI-Bench retains 100% of identity-critical facts in the controlled 30-day harness.
 
 ## Sources
 
-- Paper and arXiv source notes: [cognitive-memory-benchmarks/paper](https://github.com/bhekanik/cognitive-memory/tree/main/cognitive-memory-benchmarks/paper)
-- Experiment log: [experimentlog.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md)
-- Benchmark overview notes: [benchmarks-overview.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/docs/benchmarks-overview.md)
+- Paper and arXiv source notes: [cognitive-memory-benchmarks/paper](https://github.com/planetaryescape/cognitive-memory/tree/main/cognitive-memory-benchmarks/paper)
+- Experiment log: [experimentlog.md](https://github.com/planetaryescape/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md)
+- Benchmark overview notes: [benchmarks-overview.md](https://github.com/planetaryescape/cognitive-memory/blob/main/cognitive-memory-benchmarks/docs/benchmarks-overview.md)
 
 ## Dive deeper
 
-- [LoCoMo results](/benchmarks/locomo/)
-- [Multi-hop results](/benchmarks/multi-hop/)
-- [Methodology](/benchmarks/methodology/)
-- [vs. Mem0](/benchmarks/vs-mem0/)
-- [vs. FadeMem](/benchmarks/vs-fademem/)
-- [vs. RAG](/benchmarks/vs-rag/)
+- [LoCoMo results](/cognitive-memory/benchmarks/locomo/)
+- [Multi-hop results](/cognitive-memory/benchmarks/multi-hop/)
+- [Methodology](/cognitive-memory/benchmarks/methodology/)
+- [vs. Mem0](/cognitive-memory/benchmarks/vs-mem0/)
+- [vs. FadeMem](/cognitive-memory/benchmarks/vs-fademem/)
+- [vs. RAG](/cognitive-memory/benchmarks/vs-rag/)

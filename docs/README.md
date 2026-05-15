@@ -2,13 +2,13 @@
 
 Public documentation site for [cognitive-memory](../README.md), built with [Astro Starlight](https://starlight.astro.build/).
 
-Deployed at **[bhekanik.github.io/cognitive-memory](https://bhekanik.github.io/cognitive-memory)**.
+Deployed at **[planetaryescape.github.io/cognitive-memory](https://planetaryescape.github.io/cognitive-memory)**.
 
 ## Local development
 
 ```bash
 npm install
-npm run dev      # localhost:4321
+npm run dev      # localhost:4321/cognitive-memory/
 npm run build    # ./dist/
 npm run preview  # preview build
 ```

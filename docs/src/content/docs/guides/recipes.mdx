@@ -1,0 +1,290 @@
+---
+title: Recipes
+description: Copy task-shaped recipes for persistence, imports, tracing, and tenant isolation.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Use these when you know the job you want Cognitive Memory to do. Each recipe is the smallest working flow for that job, with offline embeddings so you can run it before wiring production models. Hash embeddings prove the wiring; use OpenAI or your own provider before judging semantic retrieval quality.
+
+## Store one durable local memory
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import JsonlFileAdapter, MemoryCategory, SyncCognitiveMemory
+
+    mem = SyncCognitiveMemory(
+        adapter=JsonlFileAdapter("recipes-memory.jsonl"),
+        embedder="hash",
+    )
+
+    mem.add(
+        "Alex is allergic to peanuts",
+        category=MemoryCategory.CORE,
+        importance=0.95,
+    )
+
+    response = mem.search("Alex is allergic to peanuts", top_k=3)
+    for result in response.results:
+        print(result.memory.content)
+        print(f"score={result.combined_score:.3f}")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      JsonlFileAdapter,
+    } from "cognitive-memory";
+
+    const mem = new CognitiveMemory({
+      adapter: new JsonlFileAdapter({ path: "recipes-memory.jsonl" }),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "alex",
+    });
+
+    await mem.store({
+      content: "Alex is allergic to peanuts",
+      category: "core",
+      importance: 0.95,
+    });
+
+    const response = await mem.search({
+      query: "Alex is allergic to peanuts",
+      limit: 3,
+    });
+
+    for (const result of response.results) {
+      console.log(result.memory.content);
+      console.log(`score=${result.combinedScore.toFixed(3)}`);
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+What you get: a `recipes-memory.jsonl` file you can inspect, plus a scored result for the memory you just stored.
+
+Use this shape for local apps, demos, and debugging sessions where a database is unnecessary but losing memory on restart would hide bugs.
+
+## Batch import historical conversations
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import CognitiveMemoryConfig, SyncCognitiveMemory
+
+    config = CognitiveMemoryConfig(
+        extraction_mode="raw",
+        run_maintenance_during_ingestion=False,
+    )
+    mem = SyncCognitiveMemory(config=config, embedder="hash")
+
+    conversations = [
+        "User: I prefer compact tables.\nAssistant: Noted.",
+        "User: For reports, show exact timestamps.\nAssistant: Got it.",
+    ]
+
+    for index, text in enumerate(conversations, start=1):
+        mem.extract_and_store(text, session_id=f"archive-{index}", run_tick=False)
+
+    mem.tick()
+
+    response = mem.search("how should reports look?", top_k=5)
+    for result in response.results:
+        print(result.memory.content)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+      type LLMProvider,
+    } from "cognitive-memory";
+
+    const rawModeLLM: LLMProvider = {
+      complete: async () => {
+        throw new Error("raw extraction mode does not call the LLM provider");
+      },
+    };
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "archive-import",
+      config: {
+        extractionMode: "raw",
+        runMaintenanceDuringIngestion: false,
+      },
+    });
+
+    const conversations = [
+      "User: I prefer compact tables.\nAssistant: Noted.",
+      "User: For reports, show exact timestamps.\nAssistant: Got it.",
+    ];
+
+    for (const [index, text] of conversations.entries()) {
+      await mem.extractAndStore(text, `archive-${index + 1}`, rawModeLLM);
+    }
+
+    await mem.tick();
+
+    const response = await mem.search({
+      query: "how should reports look?",
+      limit: 5,
+    });
+
+    for (const result of response.results) {
+      console.log(result.memory.content);
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+What you get: imported turns without running maintenance after every conversation. `tick()` runs once at the end, which is the safer shape for migrations and benchmarks.
+
+Switch `extractionMode` / `extraction_mode` to `"semantic"` or `"hybrid"` after you have an LLM provider configured and want extracted facts instead of raw turns.
+
+## Trace a retrieval answer
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import MemoryCategory, SyncCognitiveMemory
+
+    mem = SyncCognitiveMemory(embedder="hash")
+    mem.add("Alex is allergic to peanuts", category=MemoryCategory.CORE, importance=0.95)
+    mem.add("Alex likes spicy noodles", category=MemoryCategory.SEMANTIC, importance=0.5)
+
+    response = mem.search("Alex is allergic to peanuts", top_k=5, trace=True)
+
+    for result in response.results:
+        print(f"{result.combined_score:.3f}  {result.memory.content}")
+
+    if response.trace:
+        for name, stage in response.trace.stages.items():
+            print(f"{name}: {stage.candidate_count} candidates, {stage.wall_ms:.1f}ms")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+    } from "cognitive-memory";
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "alex",
+    });
+
+    await mem.store({
+      content: "Alex is allergic to peanuts",
+      category: "core",
+      importance: 0.95,
+    });
+    await mem.store({
+      content: "Alex likes spicy noodles",
+      category: "semantic",
+      importance: 0.5,
+    });
+
+    const response = await mem.search({
+      query: "Alex is allergic to peanuts",
+      limit: 5,
+      trace: true,
+    });
+
+    for (const result of response.results) {
+      console.log(`${result.combinedScore.toFixed(3)}  ${result.memory.content}`);
+    }
+
+    if (response.trace) {
+      for (const [name, stage] of Object.entries(response.trace.stages)) {
+        console.log(`${name}: ${stage.candidateCount} candidates, ${stage.wallMs.toFixed(1)}ms`);
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+What you get: the ranked memories plus per-stage candidate counts and timing. Use this before changing tuning parameters, so you know whether the problem is candidate generation, retention scoring, or result count.
+
+## Keep tenants isolated
+
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    import asyncio
+
+    from cognitive_memory import CognitiveMemory, MemoryCategory
+    from cognitive_memory.adapters import InMemoryAdapter
+
+    async def main():
+        adapter = InMemoryAdapter()
+
+        alice = CognitiveMemory(adapter=adapter, embedder="hash", user_id="alice")
+        bob = CognitiveMemory(adapter=adapter, embedder="hash", user_id="bob")
+
+        await alice.add("Alice prefers compact tables", category=MemoryCategory.SEMANTIC)
+        await bob.add("Bob prefers roomy dashboards", category=MemoryCategory.SEMANTIC)
+
+        response = await alice.search("dashboard density", top_k=5)
+        for result in response.results:
+            print(result.memory.user_id, result.memory.content)
+
+    asyncio.run(main())
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+    } from "cognitive-memory";
+
+    const adapter = new InMemoryAdapter();
+    const embeddingProvider = new HashEmbeddingProvider();
+
+    const alice = new CognitiveMemory({
+      adapter,
+      embeddingProvider,
+      userId: "alice",
+    });
+    const bob = new CognitiveMemory({
+      adapter,
+      embeddingProvider,
+      userId: "bob",
+    });
+
+    await alice.store({ content: "Alice prefers compact tables", category: "semantic" });
+    await bob.store({ content: "Bob prefers roomy dashboards", category: "semantic" });
+
+    const response = await alice.search({
+      query: "dashboard density",
+      limit: 5,
+    });
+
+    for (const result of response.results) {
+      console.log(result.memory.userId, result.memory.content);
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+What you get: Alice's search only returns Alice's memories, even though both users share one adapter instance.
+
+Use this shape for agents, SaaS apps, and test suites that need shared infrastructure without cross-user memory leakage.
+
+## See also
+
+- [Python quickstart](/cognitive-memory/getting-started/python/) for the first install and search flow.
+- [TypeScript quickstart](/cognitive-memory/getting-started/typescript/) for the same patterns in Node or Bun.
+- [Tuning guide](/cognitive-memory/guides/tuning/) for changing decay, deep recall, and consolidation behavior.
+- [Adapters overview](/cognitive-memory/adapters/overview/) for choosing storage.

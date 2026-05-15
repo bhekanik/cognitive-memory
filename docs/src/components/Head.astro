@@ -5,4 +5,72 @@ import { ClientRouter } from 'astro:transitions';
 ---
 
 <Default {...Astro.props}><slot /></Default>
+<script is:inline>
+	(() => {
+		const storageKey = 'starlight-synced-tabs__lang';
+		const aliases = new Map([
+			['py', 'Python'],
+			['python', 'Python'],
+			['ts', 'TypeScript'],
+			['typescript', 'TypeScript'],
+			['js', 'TypeScript'],
+			['javascript', 'TypeScript'],
+		]);
+		const params = new Map([
+			['Python', 'python'],
+			['TypeScript', 'typescript'],
+		]);
+
+		function labelFromUrl() {
+			const value = new URLSearchParams(window.location.search).get('lang');
+			return value ? aliases.get(value.toLowerCase()) : undefined;
+		}
+
+		function setStoredLabel(label) {
+			if (!label || typeof localStorage === 'undefined') return;
+			try {
+				localStorage.setItem(storageKey, label);
+			} catch {
+				// Ignore blocked storage; the current page's tab state still works.
+			}
+		}
+
+		function syncUrl(label) {
+			const param = params.get(label);
+			if (!param) return;
+			const url = new URL(window.location.href);
+			if (url.searchParams.get('lang') === param) return;
+			url.searchParams.set('lang', param);
+			window.history.replaceState(window.history.state, '', url);
+		}
+
+		function syncSelectedTabWithUrl() {
+			const tab = document.querySelector('starlight-tabs[data-sync-key="lang"] [role="tab"][aria-selected="true"]');
+			if (tab instanceof HTMLElement) syncUrl(tab.textContent?.trim());
+		}
+
+		setStoredLabel(labelFromUrl());
+
+		document.addEventListener('click', (event) => {
+			const target = event.target;
+			if (!(target instanceof Element)) return;
+			const tab = target.closest('starlight-tabs[data-sync-key="lang"] [role="tab"]');
+			if (!(tab instanceof HTMLElement)) return;
+			window.requestAnimationFrame(() => {
+				const label = tab.textContent?.trim();
+				setStoredLabel(label);
+				syncUrl(label);
+			});
+		}, true);
+
+		document.addEventListener('astro:after-swap', () => {
+			setStoredLabel(labelFromUrl());
+			window.requestAnimationFrame(syncSelectedTabWithUrl);
+		});
+
+		document.addEventListener('DOMContentLoaded', () => {
+			window.requestAnimationFrame(syncSelectedTabWithUrl);
+		});
+	})();
+</script>
 <ClientRouter fallback="animate" />

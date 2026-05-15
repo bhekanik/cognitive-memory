@@ -1,0 +1,30 @@
+---
+interface Item {
+  kicker: string;
+  title: string;
+  body: string;
+  href: string;
+}
+
+interface Props {
+  items: Item[];
+}
+
+const { items } = Astro.props;
+const base = import.meta.env.BASE_URL.endsWith("/")
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+---
+
+<nav class="docs-map" aria-label="Docs by task">
+  {items.map((item) => (
+    <a href={`${base}${item.href.replace(/^\/+/, "")}`}>
+      <span class="docs-map-kicker">{item.kicker}</span>
+      <span class="docs-map-copy">
+        <strong>{item.title}</strong>
+        <span>{item.body}</span>
+      </span>
+      <span class="docs-map-arrow" aria-hidden="true">-&gt;</span>
+    </a>
+  ))}
+</nav>

@@ -3,29 +3,46 @@ title: Methodology
 description: How current benchmark results are produced and logged.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Source of truth
 
 Numbers in the docs should trace to logged artifacts, not screenshots or old run names. The active sources are:
 
-- [experimentlog.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md)
-- [experimentlog_v2.md](https://github.com/bhekanik/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog_v2.md)
+- [experimentlog.md](https://github.com/planetaryescape/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog.md)
+- [experimentlog_v2.md](https://github.com/planetaryescape/cognitive-memory/blob/main/cognitive-memory-benchmarks/experimentlog_v2.md)
 - the paper source and result paths referenced from those logs
 
-The in-progress LongMemEval-S current-refresh rerun is not used here until it completes and gets logged as usable.
+The LongMemEval-S current-refresh rerun is complete and logged as usable.
 
 ## Retrieval semantics
 
 All current SDK benchmark runs use the v6-style search pipeline:
 
-```python
-response = await mem.search(
-    question,
-    top_k=20,
-    deep_recall=True,
-    trace=True,
-)
-results = response.results
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    response = await mem.search(
+        question,
+        top_k=20,
+        deep_recall=True,
+        trace=True,
+    )
+    results = response.results
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({
+      query: question,
+      limit: 20,
+      deepRecall: true,
+      trace: true,
+    });
+    const { results } = response;
+    ```
+  </TabItem>
+</Tabs>
 
 The canonical score is:
 
@@ -51,13 +68,15 @@ Oracle-evidence analysis reports 63.9% LoCoMo-scoring F1 and 61.1% Mem0-scoring 
 
 ## LongMemEval-S
 
-The active paper/docs number remains the completed recorded artifact:
+The active current-refresh artifact reports:
 
 | Metric | Result |
 |--------|:------:|
-| Task-averaged accuracy | 70.2% |
+| Task-averaged accuracy | 71.6% |
+| Overall accuracy | 72.6% |
+| Abstention accuracy | 90.0% |
 
-This is competitive with ENGRAM-class single-stage systems under the stated protocol. It is not presented as a current SOTA claim.
+This is effectively tied with ENGRAM-class single-stage systems under the stated protocol. It is not presented as a current SOTA claim.
 
 ## LTI-Bench v2
 

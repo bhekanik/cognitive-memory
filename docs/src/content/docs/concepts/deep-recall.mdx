@@ -3,6 +3,8 @@ title: Deep Recall
 description: Searching cold and superseded memories to recover details that normal search intentionally hides.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## What is deep recall?
 
 Deep recall is an optional search mode that includes cold and superseded memories in the candidate set. Normal search excludes cold, superseded, and stub records; deep recall includes cold and superseded records while still excluding stubs.
@@ -25,22 +27,45 @@ The summary captures the gist but loses specific locations, dates, and details. 
 
 ## How to use it
 
-### Python
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Normal search (excludes cold, superseded, and stub records)
+    response = await mem.search("rock climbing gym")
 
-```python
-# Normal search (excludes cold, superseded, and stub records)
-response = await mem.search("rock climbing gym")
+    # Deep recall (includes cold + superseded records at 0.5 penalty; stubs excluded)
+    response = await mem.search("rock climbing gym", deep_recall=True)
 
-# Deep recall (includes cold + superseded records at 0.5 penalty; stubs excluded)
-response = await mem.search("rock climbing gym", deep_recall=True)
+    # Each result indicates if it came from deep recall
+    for r in response.results:
+        if r.via_deep_recall:
+            print(f"[deep] {r.memory.content}")
+        else:
+            print(f"       {r.memory.content}")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Normal search (excludes cold, superseded, and stub records)
+    let response = await mem.search({ query: "rock climbing gym" });
 
-# Each result indicates if it came from deep recall
-for r in response.results:
-    if r.via_deep_recall:
-        print(f"[deep] {r.memory.content}")
-    else:
-        print(f"       {r.memory.content}")
-```
+    // Deep recall (includes cold + superseded records at 0.5 penalty; stubs excluded)
+    response = await mem.search({
+      query: "rock climbing gym",
+      deepRecall: true,
+    });
+
+    // Each result indicates if it came from deep recall
+    for (const result of response.results) {
+      if (result.viaDeepRecall) {
+        console.log(`[deep] ${result.memory.content}`);
+      } else {
+        console.log(`       ${result.memory.content}`);
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Scoring
 
@@ -64,23 +89,50 @@ During deep recall search, the adapter is asked to use `include_superseded=True`
 
 When consolidation creates a summary, it also creates association links from the summary to each original:
 
-```python
-summary.associations[original.id] = Association(
-    target_id=original.id,
-    weight=0.8,
-    created_at=now,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    summary.associations[original.id] = Association(
+        target_id=original.id,
+        weight=0.8,
+        created_at=now,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    summary.associations[original.id] = {
+      targetId: original.id,
+      weight: 0.8,
+      lastCoRetrieval: null,
+      createdAt: now,
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 These strong links (0.8) ensure that retrieving the summary can also activate the originals through the association graph, even without enabling deep recall mode.
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    deep_recall_penalty=0.5,  # score multiplier for superseded memories
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        deep_recall_penalty=0.5,  # score multiplier for superseded memories
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      deepRecallPenalty: 0.5, // score multiplier for superseded memories
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ### When to use deep recall
 
@@ -100,15 +152,42 @@ There are two ways to surface expired plan/transient memories:
 
 1. **Deep recall mode** — when `deep_recall=True`, expired transients are included alongside superseded memories (both receive the deep recall penalty):
 
-```python
-response = await mem.search("tokyo trip", deep_recall=True)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    response = await mem.search("tokyo trip", deep_recall=True)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({
+      query: "tokyo trip",
+      deepRecall: true,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
-2. **Explicit flag** — use `include_expired_transients=True` to include expired plan/transient memories without enabling full deep recall:
+2. **Explicit config** — disable transient filtering to include expired plan/transient memories without enabling full deep recall:
 
-```python
-response = await mem.search("tokyo trip", include_expired_transients=True)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(filter_expired_transients=False)
+    response = await mem.search("tokyo trip")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      filterExpiredTransients: false,
+    };
+    const response = await mem.search({ query: "tokyo trip" });
+    ```
+  </TabItem>
+</Tabs>
 
 ### Configuration
 

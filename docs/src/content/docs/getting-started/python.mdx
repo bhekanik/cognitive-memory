@@ -6,10 +6,10 @@ description: Install the Python SDK and store your first memory in under 5 minut
 ## Installation
 
 ```bash
-pip install cognitive-memory
+python3 -m pip install cognitive-memory
 ```
 
-The SDK requires Python 3.10+. By default it uses OpenAI for embeddings and extraction, so you'll need an `OPENAI_API_KEY` environment variable set.
+The SDK requires Python 3.10+. The first examples use deterministic hash embeddings, so they run without an API key. Use OpenAI later when you enable LLM extraction or production embeddings.
 
 ## Basic usage
 
@@ -19,21 +19,21 @@ The primary API is async. Use `CognitiveMemory` for async/await workflows:
 
 ```python
 import asyncio
-from cognitive_memory import CognitiveMemory
+from cognitive_memory import CognitiveMemory, MemoryCategory
 
 async def main():
-    mem = CognitiveMemory()
+    mem = CognitiveMemory(embedder="hash")
 
     # Add a memory directly
     await mem.add(
         "User is allergic to peanuts",
-        category="core",
+        category=MemoryCategory.CORE,
         importance=0.95,
         session_id="session-1",
     )
 
     # Search
-    response = await mem.search("what allergies does the user have?")
+    response = await mem.search("User is allergic to peanuts")
     for r in response.results:
         print(f"{r.memory.content}")
         print(f"  relevance={r.relevance_score:.3f}")
@@ -43,15 +43,17 @@ async def main():
 asyncio.run(main())
 ```
 
+What you get: one stored memory, one scored search result, and no network calls. Hash embeddings verify the API flow; use OpenAI or your own embedder for semantic paraphrases.
+
 ### Sync API
 
 For scripts, notebooks, and benchmarks, use `SyncCognitiveMemory` — same interface, no `await`:
 
 ```python
-from cognitive_memory import SyncCognitiveMemory
+from cognitive_memory import MemoryCategory, SyncCognitiveMemory
 
-mem = SyncCognitiveMemory()
-mem.add("User prefers dark mode", category="semantic", importance=0.4)
+mem = SyncCognitiveMemory(embedder="hash")
+mem.add("User prefers dark mode", category=MemoryCategory.SEMANTIC, importance=0.4)
 response = mem.search("UI preferences")
 # response.results is a list of SearchResult objects
 ```
@@ -59,6 +61,10 @@ response = mem.search("UI preferences")
 ## Extract from conversations
 
 Instead of manually adding memories, let the LLM extract them from conversation text:
+
+```bash
+python3 -m pip install "cognitive-memory[openai]"
+```
 
 ```python
 from cognitive_memory import SyncCognitiveMemory
@@ -86,6 +92,8 @@ This will extract memories like:
 
 The extractor uses a narrator prompt — it records what happened, not interpretations.
 
+What you get: structured memories extracted from a transcript. This path uses the default OpenAI extractor and embedder, so set `OPENAI_API_KEY` before running it.
+
 ## Choosing an adapter
 
 By default, `CognitiveMemory` uses the `InMemoryAdapter` (data lives in Python dicts, lost on restart). For persistence, implement the `MemoryAdapter` interface:
@@ -101,7 +109,7 @@ mem = CognitiveMemory()
 # mem = CognitiveMemory(adapter=MyCustomAdapter(...))
 ```
 
-See the [Custom adapters guide](/adapters/custom/) for how to build your own.
+See the [Custom adapters guide](/cognitive-memory/adapters/custom/) for how to build your own.
 
 ## Choosing an embedder
 
@@ -157,7 +165,7 @@ config = CognitiveMemoryConfig(
 mem = CognitiveMemory(config=config)
 ```
 
-See [Configuration reference](/api/configuration/) for the complete parameter list.
+See [Configuration reference](/cognitive-memory/api/configuration/) for the complete parameter list.
 
 ## Maintenance
 
@@ -185,6 +193,7 @@ print(stats)
 
 ## Next steps
 
-- [Concepts overview](/concepts/overview/) — understand how the system works
-- [API reference](/api/python/) — full Python API docs
-- [Tuning guide](/guides/tuning/) — optimize for your workload
+- [Concepts overview](/cognitive-memory/concepts/overview/) — understand how the system works
+- [Recipes](/cognitive-memory/guides/recipes/) — copy task-shaped flows for real apps
+- [API reference](/cognitive-memory/api/python/) — full Python API docs
+- [Tuning guide](/cognitive-memory/guides/tuning/) — optimize for your workload

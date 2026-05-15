@@ -116,28 +116,31 @@ Both Python and TypeScript SDKs define an abstract `MemoryAdapter` class. Your c
 
 Custom adapters may optionally implement `search_lexical` (Python) / `searchLexical` (TypeScript) to support hybrid retrieval. The default implementation returns an empty list, so hybrid search gracefully falls back to vector-only if not implemented.
 
-```python
-# Python
-async def search_lexical(
-    self,
-    query_text: str,
-    top_k: int = 10,
-    include_superseded: bool = False,
-    include_cold: bool = False,
-    include_stubs: bool = False,
-    user_id: str | None = None,
-) -> list[tuple[Memory, float]]:
-    # Implement BM25, full-text search, or any keyword-based retrieval
-    ...
-```
-
-```typescript
-// TypeScript
-async searchLexical(queryText: string, filters?: MemoryFilters): Promise<ScoredMemory[]> {
-    // Implement keyword-based retrieval
-    ...
-}
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def search_lexical(
+        self,
+        query_text: str,
+        top_k: int = 10,
+        include_superseded: bool = False,
+        include_cold: bool = False,
+        include_stubs: bool = False,
+        user_id: str | None = None,
+    ) -> list[tuple[Memory, float]]:
+        # Implement BM25, full-text search, or any keyword-based retrieval
+        ...
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async searchLexical(queryText: string, filters?: MemoryFilters): Promise<ScoredMemory[]> {
+      // Implement keyword-based retrieval
+      // ...
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Key implementation details
 
@@ -154,32 +157,64 @@ This is the most performance-critical method. It must:
 
 If your backend supports native vector search (pgvector, Pinecone, etc.), use it. Otherwise, fall back to brute-force:
 
-```python
-async def search_similar(
-    self,
-    query_embedding,
-    top_k=10,
-    include_superseded=False,
-    include_cold=False,
-    include_stubs=False,
-    user_id=None,
-):
-    results = []
-    candidates = await self.all_active() if include_cold else await self.all_hot()
-    for mem in candidates:
-        if user_id is not None and mem.user_id != user_id:
-            continue
-        if mem.embedding is None:
-            continue
-        if mem.is_stub and not include_stubs:
-            continue
-        if mem.is_superseded and not include_superseded:
-            continue
-        sim = cosine_similarity(query_embedding, mem.embedding)
-        results.append((mem, sim))
-    results.sort(key=lambda x: x[1], reverse=True)
-    return results[:top_k]
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def search_similar(
+        self,
+        query_embedding,
+        top_k=10,
+        include_superseded=False,
+        include_cold=False,
+        include_stubs=False,
+        user_id=None,
+    ):
+        results = []
+        candidates = await self.all_active() if include_cold else await self.all_hot()
+        for mem in candidates:
+            if user_id is not None and mem.user_id != user_id:
+                continue
+            if mem.embedding is None:
+                continue
+            if mem.is_stub and not include_stubs:
+                continue
+            if mem.is_superseded and not include_superseded:
+                continue
+            sim = cosine_similarity(query_embedding, mem.embedding)
+            results.append((mem, sim))
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:top_k]
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async vectorSearch(
+      queryEmbedding: number[],
+      filters: MemoryFilters = {},
+    ): Promise<ScoredMemory[]> {
+      const candidates = filters.includeCold
+        ? await this.allActive()
+        : await this.allHot();
+
+      return candidates
+        .filter((memory) => {
+          if (filters.userId && memory.userId !== filters.userId) return false;
+          if (memory.embedding.length === 0) return false;
+          if (memory.isStub && !filters.includeStubs) return false;
+          if (memory.isSuperseded && !filters.includeSuperseded) return false;
+          return true;
+        })
+        .map((memory) => ({
+          ...memory,
+          relevanceScore: cosineSimilarity(queryEmbedding, memory.embedding),
+          finalScore: cosineSimilarity(queryEmbedding, memory.embedding),
+        }))
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, filters.limit ?? 10);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### Tiered storage
 
@@ -193,26 +228,57 @@ Your adapter must support three tiers. The engine calls `migrate_to_cold()`, `mi
 
 If your backend supports transactions, implement them. If not, provide a passthrough:
 
-```python
-async def transaction(self, callback):
-    return await callback(self)  # no-op for non-transactional backends
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    async def transaction(self, callback):
+        return await callback(self)  # no-op for non-transactional backends
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    async transaction<T>(callback: (adapter: MemoryAdapter) => Promise<T>): Promise<T> {
+      return callback(this); // no-op for non-transactional backends
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Testing your adapter
 
 Use the built-in test suite to verify your adapter implements the contract correctly:
 
-```python
-from cognitive_memory.tests.test_adapters import AdapterTestSuite
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory.tests.test_adapters import AdapterTestSuite
 
-class TestMyAdapter(AdapterTestSuite):
-    def create_adapter(self):
-        return MyAdapter(...)
-```
+    class TestMyAdapter(AdapterTestSuite):
+        def create_adapter(self):
+            return MyAdapter(...)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import { describe, expect, it } from "vitest";
+
+    describe("MyAdapter", () => {
+      it("stores and retrieves memories", async () => {
+        const adapter = new MyAdapter(...);
+        const id = await adapter.createMemory(memory);
+
+        await expect(adapter.getMemory(id)).resolves.toMatchObject({
+          content: memory.content,
+        });
+      });
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 This runs a comprehensive set of tests covering CRUD, vector search, tiered storage, associations, and consolidation.
 
 ## See also
 
-- [Adapter specification](/api/adapter-spec/) — canonical contract documentation
-- [InMemory adapter source](https://github.com/bhekanik/cognitive-memory/blob/main/sdks/python/src/cognitive_memory/adapters/memory.py) — reference implementation
+- [Adapter specification](/cognitive-memory/api/adapter-spec/) — canonical contract documentation
+- [InMemory adapter source](https://github.com/planetaryescape/cognitive-memory/blob/main/sdks/python/src/cognitive_memory/adapters/memory.py) — reference implementation

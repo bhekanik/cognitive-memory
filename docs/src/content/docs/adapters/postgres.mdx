@@ -139,7 +139,7 @@ const memBob = new CognitiveMemory({ adapter, embeddingProvider, userId: "bob" }
 
 The Postgres adapter supports real transactions:
 
-```python
+```typescript
 await adapter.transaction(async (txn) => {
     const id1 = await txn.createMemory(memory1);
     const id2 = await txn.createMemory(memory2);
@@ -151,7 +151,7 @@ await adapter.transaction(async (txn) => {
 
 For production, use connection pooling:
 
-```python
+```typescript
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL!,
     max: 20,

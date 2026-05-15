@@ -3,6 +3,8 @@ title: Configuration
 description: All configurable parameters for the Cognitive Memory system.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Python configuration
 
 All parameters are set via `CognitiveMemoryConfig`:
@@ -200,84 +202,162 @@ The TypeScript SDK exposes the same parameters as Python, using camelCase naming
 
 ---
 
-## Full Python example
+## Full example
 
-```python
-config = CognitiveMemoryConfig(
-    # Decay
-    faint_threshold=0.15,
-    decay_model="exponential",
-    power_decay_gamma=1.4427,
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        # Decay
+        faint_threshold=0.15,
+        decay_model="exponential",
+        power_decay_gamma=1.4427,
 
-    # Hybrid search
-    hybrid_search=False,
-    k_sparse=30,
+        # Hybrid search
+        hybrid_search=False,
+        k_sparse=30,
 
-    # Validity
-    filter_expired_transients=True,
-    include_expired_in_deep_recall=True,
+        # Validity
+        filter_expired_transients=True,
+        include_expired_in_deep_recall=True,
 
-    # Graph
-    graph_expansion_hops=1,
-    bridge_discovery=False,
-    max_bridge_paths=3,
-    min_bridge_edge_weight=0.3,
+        # Graph
+        graph_expansion_hops=1,
+        bridge_discovery=False,
+        max_bridge_paths=3,
+        min_bridge_edge_weight=0.3,
 
-    # Retrieval scoring
-    retrieval_score_exponent=0.3,
+        # Retrieval scoring
+        retrieval_score_exponent=0.3,
 
-    # Retrieval boosting
-    direct_boost=0.1,
-    associative_boost=0.03,
-    max_spaced_rep_multiplier=2.0,
-    spaced_rep_interval_days=7.0,
+        # Retrieval boosting
+        direct_boost=0.1,
+        associative_boost=0.03,
+        max_spaced_rep_multiplier=2.0,
+        spaced_rep_interval_days=7.0,
 
-    # Core promotion
-    core_access_threshold=10,
-    core_stability_threshold=0.85,
-    core_session_threshold=3,
+        # Core promotion
+        core_access_threshold=10,
+        core_stability_threshold=0.85,
+        core_session_threshold=3,
 
-    # Associations
-    association_strengthen_amount=0.1,
-    association_retrieval_threshold=0.3,
-    association_decay_constant_days=90.0,
+        # Associations
+        association_strengthen_amount=0.1,
+        association_retrieval_threshold=0.3,
+        association_decay_constant_days=90.0,
 
-    # Consolidation
-    consolidation_retention_threshold=0.20,
-    consolidation_group_size=5,
-    consolidation_similarity_threshold=0.70,
+        # Consolidation
+        consolidation_retention_threshold=0.20,
+        consolidation_group_size=5,
+        consolidation_similarity_threshold=0.70,
 
-    # Tiered storage
-    cold_migration_days=7,
-    cold_storage_ttl_days=180,
+        # Tiered storage
+        cold_migration_days=7,
+        cold_storage_ttl_days=180,
 
-    # Deep recall
-    deep_recall_penalty=0.5,
+        # Deep recall
+        deep_recall_penalty=0.5,
 
-    # Ingestion
-    run_maintenance_during_ingestion=True,
+        # Ingestion
+        run_maintenance_during_ingestion=True,
 
-    # Extraction
-    extraction_mode="semantic",
-    extraction_model="gpt-4o-mini",
-    custom_extraction_instructions=None,
+        # Extraction
+        extraction_mode="semantic",
+        extraction_model="gpt-4o-mini",
+        custom_extraction_instructions=None,
 
-    # Reranking
-    rerank_enabled=False,
-    k_rerank=10,
-    rerank_model=None,
+        # Reranking
+        rerank_enabled=False,
+        k_rerank=10,
+        rerank_model=None,
 
-    # Models
-    embedding_model="text-embedding-3-small",
-    embedding_dimensions=1536,
-)
-```
+        # Models
+        embedding_model="text-embedding-3-small",
+        embedding_dimensions=1536,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      // Decay
+      faintThreshold: 0.15,
+      decayModel: "exponential",
+      powerDecayGamma: 1.4427,
+
+      // Hybrid search
+      hybridSearch: false,
+      kSparse: 30,
+
+      // Validity
+      filterExpiredTransients: true,
+      includeExpiredInDeepRecall: true,
+
+      // Graph
+      graphExpansionHops: 1,
+      bridgeDiscovery: false,
+      maxBridgePaths: 3,
+      minBridgeEdgeWeight: 0.3,
+
+      // Retrieval scoring
+      retrievalScoreExponent: 0.3,
+
+      // Retrieval boosting
+      directBoost: 0.1,
+      associativeBoost: 0.03,
+      maxSpacedRepMultiplier: 2.0,
+      spacedRepIntervalDays: 7.0,
+
+      // Core promotion
+      coreAccessThreshold: 10,
+      coreStabilityThreshold: 0.85,
+      coreSessionThreshold: 3,
+
+      // Associations
+      associationStrengthenAmount: 0.1,
+      associationRetrievalThreshold: 0.3,
+      associationDecayConstantDays: 90.0,
+
+      // Consolidation
+      consolidationRetentionThreshold: 0.2,
+      consolidationGroupSize: 5,
+      consolidationSimilarityThreshold: 0.7,
+
+      // Tiered storage
+      coldMigrationDays: 7,
+      coldStorageTtlDays: 180,
+
+      // Deep recall
+      deepRecallPenalty: 0.5,
+
+      // Ingestion
+      runMaintenanceDuringIngestion: true,
+
+      // Extraction
+      extractionMode: "semantic",
+      extractionModel: "gpt-4o-mini",
+      customExtractionInstructions: null,
+
+      // Reranking
+      rerankEnabled: false,
+      kRerank: 10,
+      rerankModel: null,
+
+      // Models
+      embeddingModel: "text-embedding-3-small",
+      embeddingDimensions: 1536,
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 
 ## Tuning guidelines
 
-See the [Tuning guide](/guides/tuning/) for detailed advice on adjusting these parameters for your workload.
+See the [Tuning guide](/cognitive-memory/guides/tuning/) for detailed advice on adjusting these parameters for your workload.
 
 Key interactions to be aware of:
 - `retrieval_score_exponent` and `direct_boost` interact: higher alpha makes boosting more impactful

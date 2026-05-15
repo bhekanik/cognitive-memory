@@ -3,6 +3,8 @@ title: Retrieval Boosting
 description: How memories strengthen through direct and associative retrieval.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Spaced repetition for AI
 
 In human memory, recalling a fact strengthens it — making it harder to forget in the future. Cognitive Memory implements this through two-tier retrieval boosting.
@@ -62,7 +64,7 @@ When a memory receives a boost, several things change:
 4. **session_ids** adds the current session ID
 
 All of these feed back into the system:
-- Higher stability slows future decay (see [decay model](/concepts/decay-model/))
+- Higher stability slows future decay (see [decay model](/cognitive-memory/concepts/decay-model/))
 - Higher access count contributes to core promotion eligibility
 - Updated last_accessed_at resets the decay clock
 - More session IDs move the memory toward the 3-session core promotion threshold
@@ -90,14 +92,30 @@ Over many retrievals, stability asymptotically approaches 1.0, making the memory
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    direct_boost=0.1,              # base direct boost
-    associative_boost=0.03,        # base associative boost
-    max_spaced_rep_multiplier=2.0, # cap on spaced rep factor
-    spaced_rep_interval_days=7.0,  # days for 1x factor
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        direct_boost=0.1,              # base direct boost
+        associative_boost=0.03,        # base associative boost
+        max_spaced_rep_multiplier=2.0, # cap on spaced rep factor
+        spaced_rep_interval_days=7.0,  # days for 1x factor
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      directBoost: 0.1, // base direct boost
+      associativeBoost: 0.03, // base associative boost
+      maxSpacedRepMultiplier: 2.0, // cap on spaced rep factor
+      spacedRepIntervalDays: 7.0, // days for 1x factor
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ## Cold reactivation
 

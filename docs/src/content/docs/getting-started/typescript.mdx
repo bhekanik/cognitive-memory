@@ -39,7 +39,7 @@ const id = await mem.store({
 
 // Search memories
 const { results } = await mem.search({
-  query: "what food allergies does the user have?",
+  query: "User is allergic to shellfish",
   limit: 5,
 });
 
@@ -47,6 +47,8 @@ for (const result of results) {
   console.log(`${result.memory.content} (score=${result.combinedScore.toFixed(3)})`);
 }
 ```
+
+What you get: one stored memory, one scored search result, and no network calls. Hash embeddings verify the API flow; use OpenAI or your own embedder for semantic paraphrases.
 
 ## Memory types
 
@@ -160,13 +162,13 @@ const mem2 = new CognitiveMemory({
 
 // JSONL file (local development, debugging)
 const mem3 = new CognitiveMemory({
-  adapter: new JsonlFileAdapter({ filePath: "./memories.jsonl" }),
+  adapter: new JsonlFileAdapter({ path: "./memories.jsonl" }),
   embeddingProvider,
   userId: "user-1",
 });
 ```
 
-See the [Adapters overview](/adapters/overview/) for the full list and decision matrix.
+See the [Adapters overview](/cognitive-memory/adapters/overview/) for the full list and decision matrix.
 
 ## Configuration
 
@@ -188,10 +190,11 @@ const mem = new CognitiveMemory({
 });
 ```
 
-See [Configuration reference](/api/configuration/) for the complete parameter list.
+See [Configuration reference](/cognitive-memory/api/configuration/) for the complete parameter list.
 
 ## Next steps
 
-- [Concepts overview](/concepts/overview/) — understand the cognitive model
-- [API reference](/api/typescript/) — full TypeScript API docs
-- [Adapters](/adapters/overview/) — choose the right storage backend
+- [Concepts overview](/cognitive-memory/concepts/overview/) — understand the cognitive model
+- [Recipes](/cognitive-memory/guides/recipes/) — copy task-shaped flows for real apps
+- [API reference](/cognitive-memory/api/typescript/) — full TypeScript API docs
+- [Adapters](/cognitive-memory/adapters/overview/) — choose the right storage backend

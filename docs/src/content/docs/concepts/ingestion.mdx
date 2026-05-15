@@ -3,6 +3,8 @@ title: Ingestion Pipeline
 description: How conversations are processed into structured memories through LLM extraction.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Overview
 
 The ingestion pipeline converts raw conversation text into structured, embedded, and linked memories. It has five stages:
@@ -45,22 +47,51 @@ Specific facts are harder to extract but much more useful for retrieval. "What t
 
 You can prepend custom instructions to the extraction prompt:
 
-```python
-config = CognitiveMemoryConfig(
-    custom_extraction_instructions="Focus on the user's dietary restrictions and food preferences."
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        custom_extraction_instructions="Focus on the user's dietary restrictions and food preferences."
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      customExtractionInstructions:
+        "Focus on the user's dietary restrictions and food preferences.",
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ## Stage 2: Embedding
 
 After extraction, all memory contents are batch-embedded:
 
-```python
-contents = [m.content for m in memories]
-embeddings = self._embedder.embed_batch(contents)
-for mem, emb in zip(memories, embeddings):
-    mem.embedding = emb
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    contents = [m.content for m in memories]
+    embeddings = self._embedder.embed_batch(contents)
+    for mem, emb in zip(memories, embeddings):
+        mem.embedding = emb
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const contents = memories.map((memory) => memory.content);
+    const embeddings = await this.embeddingProvider.embedBatch?.(contents)
+      ?? await Promise.all(contents.map((content) => this.embeddingProvider.embed(content)));
+
+    memories.forEach((memory, index) => {
+      memory.embedding = embeddings[index];
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 Batch embedding is more efficient than individual calls. The default embedder uses OpenAI's `text-embedding-3-small` with 1536 dimensions.
 
@@ -72,18 +103,38 @@ No LLM calls happen at this stage. A single `search_similar(top_k=5)` call is ma
 
 Memories from the same session root (e.g., dual-perspective ingestion of the same conversation) are skipped to avoid false conflict pairs.
 
-See [Conflict detection](/concepts/conflict-detection/) for the full two-phase resolution mechanism.
+See [Conflict detection](/cognitive-memory/concepts/conflict-detection/) for the full two-phase resolution mechanism.
 
 ## Stage 4: Ingestion-time similarity boost
 
 If a new memory is semantically similar to an existing memory (similarity > 0.75), the existing memory's stability gets a small boost (+0.05):
 
-```python
-similar = await self._adapter.search_similar(mem.embedding, top_k=3)
-for existing_mem, sim in similar:
-    if sim > 0.75 and existing_mem.id != mem.id:
-        existing_mem.stability = min(1.0, existing_mem.stability + 0.05)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    similar = await self._adapter.search_similar(mem.embedding, top_k=3)
+    for existing_mem, sim in similar:
+        if sim > 0.75 and existing_mem.id != mem.id:
+            existing_mem.stability = min(1.0, existing_mem.stability + 0.05)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const similar = await this.adapter.vectorSearch(memory.embedding, {
+      userId: this.config.userId,
+      limit: 3,
+    });
+
+    for (const existing of similar) {
+      if (existing.relevanceScore > 0.75 && existing.id !== memory.id) {
+        await this.adapter.updateMemory(existing.id, {
+          stability: Math.min(1.0, existing.stability + 0.05),
+        });
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 This models repeated exposure: when a user mentions the same topic across conversations, the existing memory about that topic becomes more stable — even though a new memory is also being created.
 
@@ -95,27 +146,53 @@ The final stage creates association links between memories extracted from the sa
 2. If similarity >= 0.4, create a bidirectional association
 3. Link weight = `min(0.5, 0.2 + (sim - 0.4) * 0.5)`
 
-See [Associations](/concepts/associations/) for details on how these links are used during retrieval.
+See [Associations](/cognitive-memory/concepts/associations/) for details on how these links are used during retrieval.
 
 ## Full usage
 
-```python
-# High-level: extract + store everything from a conversation
-memories = await mem.extract_and_store(
-    conversation_text,
-    session_id="session-42",
-    timestamp=datetime(2024, 3, 15),
-    run_tick=True,  # run maintenance every 5 ingestions
-)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # High-level: extract + store everything from a conversation
+    memories = await mem.extract_and_store(
+        conversation_text,
+        session_id="session-42",
+        timestamp=datetime(2024, 3, 15),
+        run_tick=True,  # run maintenance every 5 ingestions
+    )
 
-# Low-level: add a single memory directly (skips LLM extraction)
-memory = await mem.add(
-    "User is allergic to peanuts",
-    category="core",
-    importance=0.95,
-    session_id="session-42",
-)
-```
+    # Low-level: add a single memory directly (skips LLM extraction)
+    memory = await mem.add(
+        "User is allergic to peanuts",
+        category="core",
+        importance=0.95,
+        session_id="session-42",
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { LLMProvider } from "cognitive-memory";
+
+    declare const llm: LLMProvider;
+
+    // High-level: extract + store everything from a conversation
+    const memoryIds = await mem.extractAndStore(
+      conversationText,
+      "session-42",
+      llm,
+    );
+
+    // Low-level: add a single memory directly (skips LLM extraction)
+    const memoryId = await mem.store({
+      content: "User is allergic to peanuts",
+      category: "core",
+      importance: 0.95,
+      metadata: { sessionId: "session-42" },
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Extraction modes
 
@@ -125,9 +202,22 @@ The `extraction_mode` parameter controls how conversations become memories. Choo
 
 LLM extracts structured facts from conversation text. Best for most applications.
 
-```python
-config = CognitiveMemoryConfig(extraction_mode="semantic")
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(extraction_mode="semantic")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "semantic",
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 **Strengths:** Deduplicates redundant information, classifies by category, assigns importance, resolves relative dates, captures multi-hop reasoning chains.
 
@@ -139,9 +229,22 @@ config = CognitiveMemoryConfig(extraction_mode="semantic")
 
 Each conversation turn is stored verbatim as an episodic memory. No LLM is called during ingestion.
 
-```python
-config = CognitiveMemoryConfig(extraction_mode="raw")
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(extraction_mode="raw")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "raw",
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 **Strengths:** Zero extraction cost, preserves exact quotes and timestamps, no information loss, fast ingestion.
 
@@ -153,9 +256,22 @@ config = CognitiveMemoryConfig(extraction_mode="raw")
 
 Runs both: LLM extracts structured facts AND raw turns are stored. Retrieval searches across both.
 
-```python
-config = CognitiveMemoryConfig(extraction_mode="hybrid")
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(extraction_mode="hybrid")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "hybrid",
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 **Strengths:** Combines structured reasoning with verbatim recall. Questions about facts hit extracted memories; questions about exact wording hit raw turns.
 
@@ -176,28 +292,77 @@ config = CognitiveMemoryConfig(extraction_mode="hybrid")
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="semantic",              # "raw" | "semantic" | "hybrid"
-    extraction_model="gpt-4o-mini",         # LLM for extraction
-    embedding_model="text-embedding-3-small", # embedding model
-    embedding_dimensions=1536,               # embedding vector size
-    run_maintenance_during_ingestion=True,    # set False for batch imports
-    custom_extraction_instructions=None,      # prepend to extraction prompt
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="semantic",              # "raw" | "semantic" | "hybrid"
+        extraction_model="gpt-4o-mini",         # LLM for extraction
+        embedding_model="text-embedding-3-small", # embedding model
+        embedding_dimensions=1536,               # embedding vector size
+        run_maintenance_during_ingestion=True,    # set False for batch imports
+        custom_extraction_instructions=None,      # prepend to extraction prompt
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "semantic", // "raw" | "semantic" | "hybrid"
+      extractionModel: "gpt-4o-mini", // LLM for extraction
+      embeddingModel: "text-embedding-3-small", // embedding model
+      embeddingDimensions: 1536, // embedding vector size
+      runMaintenanceDuringIngestion: true, // set false for batch imports
+      customExtractionInstructions: null, // prepend to extraction prompt
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ## Batch ingestion
 
 For batch imports (benchmarks, migration), disable maintenance during ingestion:
 
-```python
-config = CognitiveMemoryConfig(run_maintenance_during_ingestion=False)
-mem = CognitiveMemory(config=config)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(run_maintenance_during_ingestion=False)
+    mem = CognitiveMemory(config=config)
 
-for conv in conversations:
-    await mem.extract_and_store(conv, session_id=..., run_tick=False)
+    for conv in conversations:
+        await mem.extract_and_store(conv, session_id=..., run_tick=False)
 
-# Run maintenance once at the end
-await mem.tick()
-```
+    # Run maintenance once at the end
+    await mem.tick()
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+      type LLMProvider,
+    } from "cognitive-memory";
+
+    declare const conversations: string[];
+    declare const llm: LLMProvider;
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "batch-import",
+      config: { runMaintenanceDuringIngestion: false },
+    });
+
+    for (const [index, conversation] of conversations.entries()) {
+      await mem.extractAndStore(conversation, `archive-${index + 1}`, llm);
+    }
+
+    // Run maintenance once at the end
+    await mem.tick(llm);
+    ```
+  </TabItem>
+</Tabs>

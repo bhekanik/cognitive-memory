@@ -3,6 +3,8 @@ title: Memory Types
 description: Episodic, semantic, procedural, and core memories — each with distinct decay behaviors.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Cognitive Memory classifies every memory into one of four categories. Each category has a different base decay rate and behavior, mirroring how human memory works.
 
 ## Episodic memories
@@ -13,13 +15,26 @@ Cognitive Memory classifies every memory into one of four categories. Each categ
 
 **When to use:** The LLM extractor assigns `episodic` to memories containing temporal markers, past-tense descriptions, or one-time events.
 
-```python
-await mem.add(
-    "User attended a Python conference in Portland on March 5",
-    category="episodic",
-    importance=0.5,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    await mem.add(
+        "User attended a Python conference in Portland on March 5",
+        category="episodic",
+        importance=0.5,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    await mem.store({
+      content: "User attended a Python conference in Portland on March 5",
+      category: "episodic",
+      importance: 0.5,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Semantic memories
 
@@ -29,13 +44,26 @@ await mem.add(
 
 **When to use:** This is the default category. The extractor assigns `semantic` to any fact that isn't clearly time-bound, procedural, or identity-defining.
 
-```python
-await mem.add(
-    "User prefers window seats on flights",
-    category="semantic",
-    importance=0.4,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    await mem.add(
+        "User prefers window seats on flights",
+        category="semantic",
+        importance=0.4,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    await mem.store({
+      content: "User prefers window seats on flights",
+      category: "semantic",
+      importance: 0.4,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Procedural memories
 
@@ -43,13 +71,26 @@ await mem.add(
 
 **Decay behavior:** **Never decays.** The base decay rate is infinite. In human cognition, procedural memories (like riding a bike) are extremely resistant to forgetting. They are only updated through correction, not decay.
 
-```python
-await mem.add(
-    "User does 30 minutes of yoga every morning",
-    category="procedural",
-    importance=0.6,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    await mem.add(
+        "User does 30 minutes of yoga every morning",
+        category="procedural",
+        importance=0.6,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    await mem.store({
+      content: "User does 30 minutes of yoga every morning",
+      category: "procedural",
+      importance: 0.6,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Core memories
 
@@ -65,15 +106,28 @@ await mem.add(
    - `stability >= 0.85` (high stability from repeated use)
    - Accessed across `>= 3` distinct sessions
 
-See [Core promotion](/concepts/core-promotion/) for details on the promotion mechanism.
+See [Core promotion](/cognitive-memory/concepts/core-promotion/) for details on the promotion mechanism.
 
-```python
-await mem.add(
-    "User's name is Alex, 32 years old",
-    category="core",
-    importance=0.95,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    await mem.add(
+        "User's name is Alex, 32 years old",
+        category="core",
+        importance=0.95,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    await mem.store({
+      content: "User's name is Alex, 32 years old",
+      category: "core",
+      importance: 0.95,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Decay rates summary
 
@@ -88,9 +142,22 @@ await mem.add(
 
 The TypeScript SDK uses a slightly simplified type system:
 
-```typescript
-type MemoryCategory = "core" | "semantic" | "episodic" | "procedural";
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import MemoryCategory
+
+    category = MemoryCategory.CORE
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    type MemoryCategory = "core" | "semantic" | "episodic" | "procedural";
+
+    const category: MemoryCategory = "core";
+    ```
+  </TabItem>
+</Tabs>
 
 Core memory behavior in TypeScript is handled through stability thresholds and metadata rather than a separate type. The decay rates map directly:
 
@@ -124,7 +191,7 @@ These two dimensions are **orthogonal**: a `plan` can be `episodic` (one-time tr
 | End time | `valid_until` | `validUntil` | When the memory expires (ISO 8601 or `Date`) |
 | TTL | `ttl_seconds` | `ttlSeconds` | Alternative to `valid_until` — seconds from creation |
 
-Expired `plan` and `transient_state` memories are filtered from search results by default. See [Deep Recall](/concepts/deep-recall/) for how to include them.
+Expired `plan` and `transient_state` memories are filtered from search results by default. See [Deep Recall](/cognitive-memory/concepts/deep-recall/) for how to include them.
 
 ## How the extractor chooses
 

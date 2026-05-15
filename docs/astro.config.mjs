@@ -5,6 +5,8 @@ import starlight from '@astrojs/starlight';
 import react from '@astrojs/react';
 
 export default defineConfig({
+  site: 'https://planetaryescape.github.io',
+  base: '/cognitive-memory',
   integrations: [starlight({
     title: 'Cognitive Memory',
     description: 'Biologically-inspired agent memory with decay, consolidation, and tiered storage',
@@ -23,7 +25,7 @@ export default defineConfig({
       Footer: './src/components/Footer.astro',
       Hero: './src/components/Hero.astro',
     },
-    social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/bhekanik/cognitive-memory' }],
-    editLink: { baseUrl: 'https://github.com/bhekanik/cognitive-memory/edit/main/docs/' },
+    social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/planetaryescape/cognitive-memory' }],
+    editLink: { baseUrl: 'https://github.com/planetaryescape/cognitive-memory/edit/main/docs/' },
   }), react()],
 });

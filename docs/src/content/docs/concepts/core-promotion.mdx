@@ -3,6 +3,8 @@ title: Core Promotion
 description: How ordinary memories earn protected status through repeated, cross-session retrieval.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## What is core promotion?
 
 Core promotion is an emergent process where frequently-accessed, high-stability memories are automatically upgraded to core status. Core memories receive a 0.60 retention floor and are exempt from cold storage migration — they represent the most important information the system has learned.
@@ -31,20 +33,43 @@ Each criterion filters out a different type of noise:
 
 Core promotion is checked during the retrieval pipeline. After applying direct and associative boosts, the engine checks every returned memory against the promotion criteria:
 
-```python
-def check_core_promotion(self, memory: Memory) -> bool:
-    if memory.category == MemoryCategory.CORE:
-        return False  # already core
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    def check_core_promotion(self, memory: Memory) -> bool:
+        if memory.category == MemoryCategory.CORE:
+            return False  # already core
 
-    if (
-        memory.access_count >= self.config.core_access_threshold
-        and memory.stability >= self.config.core_stability_threshold
-        and len(memory.session_ids) >= self.config.core_session_threshold
-    ):
-        memory.category = MemoryCategory.CORE
-        return True
-    return False
-```
+        if (
+            memory.access_count >= self.config.core_access_threshold
+            and memory.stability >= self.config.core_stability_threshold
+            and len(memory.session_ids) >= self.config.core_session_threshold
+        ):
+            memory.category = MemoryCategory.CORE
+            return True
+        return False
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    function checkCorePromotion(memory: Memory): boolean {
+      if (memory.category === "core") {
+        return false; // already core
+      }
+
+      if (
+        memory.accessCount >= config.coreAccessThreshold &&
+        memory.stability >= config.coreStabilityThreshold &&
+        memory.sessionIds.length >= config.coreSessionThreshold
+      ) {
+        memory.category = "core";
+        return true;
+      }
+      return false;
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 When promoted:
 1. The memory's category changes to `CORE`
@@ -78,13 +103,28 @@ Promotion is the mechanism for facts that weren't obviously identity-defining at
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    core_access_threshold=10,        # minimum retrievals
-    core_stability_threshold=0.85,   # minimum stability
-    core_session_threshold=3,        # minimum distinct sessions
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        core_access_threshold=10,        # minimum retrievals
+        core_stability_threshold=0.85,   # minimum stability
+        core_session_threshold=3,        # minimum distinct sessions
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      coreAccessThreshold: 10, // minimum retrievals
+      coreStabilityThreshold: 0.85, // minimum stability
+      coreSessionThreshold: 3, // minimum distinct sessions
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ### Tuning tips
 
@@ -95,12 +135,25 @@ config = CognitiveMemoryConfig(
 
 ## Demotion
 
-Core memories can be demoted when contradicted. If a new memory conflicts with a core memory (detected by the [conflict detection](/concepts/conflict-detection/) system), the core memory is demoted to semantic:
+Core memories can be demoted when contradicted. If a new memory conflicts with a core memory (detected by the [conflict detection](/cognitive-memory/concepts/conflict-detection/) system), the core memory is demoted to semantic:
 
-```python
-if conflict_type in ("CONTRADICTION", "UPDATE"):
-    if existing.category == MemoryCategory.CORE:
-        existing.category = MemoryCategory.SEMANTIC
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    if conflict_type in ("CONTRADICTION", "UPDATE"):
+        if existing.category == MemoryCategory.CORE:
+            existing.category = MemoryCategory.SEMANTIC
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    if (conflictType === "CONTRADICTION" || conflictType === "UPDATE") {
+      if (existing.category === "core") {
+        existing.category = "semantic";
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 This handles cases like "User moved from Portland to Seattle" contradicting the core memory "User lives in Portland."

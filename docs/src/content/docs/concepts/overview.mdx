@@ -20,7 +20,7 @@ The system implements six biologically-inspired mechanisms:
 
 Every memory has a retention score R(m) that decays exponentially over time. The decay rate depends on the memory's type, stability, and importance. Core memories have a retention floor of 0.60 — they dim but never vanish.
 
-See [Decay model](/concepts/decay-model/) and [Decay floors](/concepts/decay-floors/).
+See [Decay model](/cognitive-memory/concepts/decay-model/) and [Decay floors](/cognitive-memory/concepts/decay-floors/).
 
 ### 2. Memory categorization
 
@@ -33,19 +33,19 @@ Memories are classified into four categories, each with different decay characte
 | Procedural | infinite | -- | Skills, routines (never decay) |
 | Core | 120 | 0.60 | Identity-defining information |
 
-See [Memory types](/concepts/memory-types/).
+See [Memory types](/cognitive-memory/concepts/memory-types/).
 
 ### 3. Retrieval-weighted scoring
 
 Search results are scored by `sim(m,q) * R(m)^0.3` — cosine similarity modulated by retention. The exponent 0.3 softens the decay penalty so faded memories can still surface when highly relevant.
 
-See [Retrieval scoring](/concepts/retrieval-scoring/).
+See [Retrieval scoring](/cognitive-memory/concepts/retrieval-scoring/).
 
 ### 4. Two-tier retrieval boosting
 
 When a memory is retrieved, its stability increases. Direct matches get a larger boost (0.1) than associatively-activated memories (0.03). Both are modulated by a spaced repetition factor: longer gaps between retrievals produce bigger boosts.
 
-See [Retrieval boosting](/concepts/retrieval-boosting/).
+See [Retrieval boosting](/cognitive-memory/concepts/retrieval-boosting/).
 
 ### 5. Associative memory graph
 
@@ -55,7 +55,7 @@ Memories form bidirectional links through two mechanisms:
 
 Links decay exponentially with time constant 90 days.
 
-See [Associations](/concepts/associations/).
+See [Associations](/cognitive-memory/concepts/associations/).
 
 ### 6. Tiered storage lifecycle
 
@@ -64,7 +64,7 @@ Memories move through three tiers:
 - **Cold**: ID-accessible only, no vector search
 - **Stub**: archived summary, minimal footprint
 
-See [Tiered storage](/concepts/tiered-storage/).
+See [Tiered storage](/cognitive-memory/concepts/tiered-storage/).
 
 ## How it fits together
 
@@ -111,4 +111,4 @@ Conversation text
 
 Periodic maintenance (`tick()`) handles conflict resolution, cold migration, TTL expiry, and consolidation in the background.
 
-See [Scoring pipeline](/concepts/scoring-pipeline/) for the complete retrieval flow, and [Ingestion](/concepts/ingestion/) for the extraction pipeline.
+See [Scoring pipeline](/cognitive-memory/concepts/scoring-pipeline/) for the complete retrieval flow, and [Ingestion](/cognitive-memory/concepts/ingestion/) for the extraction pipeline.

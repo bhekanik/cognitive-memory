@@ -3,6 +3,8 @@ title: Associations
 description: Synaptic tagging, co-retrieval strengthening, and the associative memory graph.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## What are associations?
 
 Associations are bidirectional weighted links between memories. When you retrieve a memory, its associated memories are also activated and returned alongside it — even if they didn't directly match the search query.
@@ -21,21 +23,51 @@ The algorithm:
 3. If similarity >= 0.4 (the ingestion association threshold), create a bidirectional link
 4. Link weight = `min(0.5, 0.2 + (sim - 0.4) * 0.5)`
 
-```python
-# From core.py — simplified
-for i in range(len(stored)):
-    for j in range(i + 1, len(stored)):
-        sim = cosine_similarity(stored[i].embedding, stored[j].embedding)
-        if sim >= 0.4:
-            weight = min(0.5, 0.2 + (sim - 0.4) * 0.5)
-            # Create bidirectional association
-            stored[i].associations[stored[j].id] = Association(
-                target_id=stored[j].id, weight=weight,
-            )
-            stored[j].associations[stored[i].id] = Association(
-                target_id=stored[i].id, weight=weight,
-            )
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # From core.py — simplified
+    for i in range(len(stored)):
+        for j in range(i + 1, len(stored)):
+            sim = cosine_similarity(stored[i].embedding, stored[j].embedding)
+            if sim >= 0.4:
+                weight = min(0.5, 0.2 + (sim - 0.4) * 0.5)
+                # Create bidirectional association
+                stored[i].associations[stored[j].id] = Association(
+                    target_id=stored[j].id, weight=weight,
+                )
+                stored[j].associations[stored[i].id] = Association(
+                    target_id=stored[i].id, weight=weight,
+                )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // From CognitiveMemory.ts — simplified
+    for (let i = 0; i < stored.length; i++) {
+      for (let j = i + 1; j < stored.length; j++) {
+        const sim = cosineSimilarity(stored[i].embedding, stored[j].embedding);
+        if (sim >= 0.4) {
+          const weight = Math.min(0.5, 0.2 + (sim - 0.4) * 0.5);
+          // Create bidirectional association
+          stored[i].associations[stored[j].id] = {
+            targetId: stored[j].id,
+            weight,
+            lastCoRetrieval: null,
+            createdAt: Date.now(),
+          };
+          stored[j].associations[stored[i].id] = {
+            targetId: stored[i].id,
+            weight,
+            lastCoRetrieval: null,
+            createdAt: Date.now(),
+          };
+        }
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### 2. Co-retrieval strengthening
 
@@ -80,28 +112,57 @@ During search, the retrieval pipeline:
 4. Applies associative boost to retrieved associated memories
 5. Merges direct and associative results, sorts by score
 
-Associated memories receive the smaller [associative boost](/concepts/retrieval-boosting/) (0.03 vs 0.1 for direct matches).
+Associated memories receive the smaller [associative boost](/cognitive-memory/concepts/retrieval-boosting/) (0.03 vs 0.1 for direct matches).
 
 ## The Association dataclass
 
-```python
-@dataclass
-class Association:
-    target_id: str              # ID of the linked memory
-    weight: float = 0.3         # link strength [0, 1]
-    last_co_retrieval: datetime  # when the link was last reinforced
-    created_at: datetime         # when the link was first created
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    @dataclass
+    class Association:
+        target_id: str               # ID of the linked memory
+        weight: float = 0.3          # link strength [0, 1]
+        last_co_retrieval: datetime  # when the link was last reinforced
+        created_at: datetime         # when the link was first created
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    interface Association {
+      targetId: string;              // ID of the linked memory
+      weight: number;                // link strength [0, 1]
+      lastCoRetrieval: number | null; // when the link was last reinforced
+      createdAt: number;             // when the link was first created
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    association_strengthen_amount=0.1,    # weight increase per co-retrieval
-    association_retrieval_threshold=0.3,  # minimum weight to activate
-    association_decay_constant_days=90.0, # exponential decay time constant
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        association_strengthen_amount=0.1,    # weight increase per co-retrieval
+        association_retrieval_threshold=0.3,  # minimum weight to activate
+        association_decay_constant_days=90.0, # exponential decay time constant
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      associationStrengthenAmount: 0.1, // weight increase per co-retrieval
+      associationRetrievalThreshold: 0.3, // minimum weight to activate
+      associationDecayConstantDays: 90, // exponential decay time constant
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ## Cross-tier associations
 

@@ -94,13 +94,28 @@ The append-only nature means you have a complete history of every memory operati
 
 ### Test fixtures
 
-```typescript
-// Write memories during development
-const adapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory.adapters.jsonl import JsonlFileAdapter
 
-// Later, load them in tests
-const testAdapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
-```
+    # Write memories during development
+    adapter = JsonlFileAdapter("./test-fixtures/conversation-1.jsonl")
+
+    # Later, load them in tests
+    test_adapter = JsonlFileAdapter("./test-fixtures/conversation-1.jsonl")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Write memories during development
+    const adapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
+
+    // Later, load them in tests
+    const testAdapter = new JsonlFileAdapter({ path: "./test-fixtures/conversation-1.jsonl" });
+    ```
+  </TabItem>
+</Tabs>
 
 ## Limitations
 

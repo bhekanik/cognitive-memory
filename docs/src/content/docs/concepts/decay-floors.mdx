@@ -3,6 +3,8 @@ title: Decay Floors
 description: Why memories don't decay to zero, and how core memories are protected.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## The problem with unbounded decay
 
 In a pure exponential decay model, every memory eventually reaches zero retention. This is fine for episodic details ("what I had for lunch last Tuesday"), but catastrophic for identity-defining facts ("the user is allergic to peanuts").
@@ -60,13 +62,24 @@ The core floor is particularly important for:
 
 The floor values are defined in `types.py` / `types.ts`:
 
-```python
-# Python
-DECAY_FLOORS = {
-    "core": 0.60,
-    "regular": 0.02,
-}
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    DECAY_FLOORS = {
+        "core": 0.60,
+        "regular": 0.02,
+    }
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const DECAY_FLOORS = {
+      core: 0.6,
+      regular: 0.02,
+    } as const;
+    ```
+  </TabItem>
+</Tabs>
 
 These are not currently configurable at runtime — they're fundamental constants of the system. If you need to adjust them, you can modify the source directly or override the `floor` property on `Memory`.
 

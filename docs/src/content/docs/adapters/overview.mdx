@@ -22,10 +22,10 @@ All adapters implement the same abstract interface (`MemoryAdapter` in Python, `
 
 | Adapter | Language | Persistence | Vector search | Best for |
 |---------|----------|-------------|--------------|----------|
-| [InMemory](/adapters/in-memory/) | Python, TS | No | Brute-force cosine | Testing, prototyping |
-| [JSONL](/adapters/jsonl/) | Python, TS | File | Brute-force cosine | Local debugging, audit logs |
-| [Postgres](/adapters/postgres/) | TS | Yes | pgvector | Production TypeScript apps |
-| [Convex](/adapters/convex/) | TypeScript | Yes | Convex vector search | Serverless apps |
+| [InMemory](/cognitive-memory/adapters/in-memory/) | Python, TS | No | Brute-force cosine | Testing, prototyping |
+| [JSONL](/cognitive-memory/adapters/jsonl/) | Python, TS | File | Brute-force cosine | Local debugging, audit logs |
+| [Postgres](/cognitive-memory/adapters/postgres/) | TS | Yes | pgvector | Production TypeScript apps |
+| [Convex](/cognitive-memory/adapters/convex/) | TypeScript | Yes | Convex vector search | Serverless apps |
 
 ## Decision matrix
 
@@ -80,4 +80,4 @@ Use `ConvexAdapter` (TypeScript). Convex handles scaling, real-time sync, and mu
 
 ## Writing a custom adapter
 
-If none of the built-in adapters fit, you can write your own by implementing the `MemoryAdapter` abstract class. See [Custom adapters](/adapters/custom/) for the full guide.
+If none of the built-in adapters fit, you can write your own by implementing the `MemoryAdapter` abstract class. See [Custom adapters](/cognitive-memory/adapters/custom/) for the full guide.

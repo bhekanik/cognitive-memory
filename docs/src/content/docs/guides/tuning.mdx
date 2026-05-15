@@ -3,6 +3,8 @@ title: Configuration Guide
 description: Match Cognitive Memory settings to your use case. Covers extraction, retrieval, decay, consolidation, and every configurable parameter.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Every parameter has a sensible default. You don't need to change anything to get started. This guide helps you tune settings when you have a specific use case or want to optimize performance.
 
 ## Quick-start recipes
@@ -13,16 +15,34 @@ Pick the recipe closest to your use case, then fine-tune individual parameters a
 
 Long-running conversations across many sessions. Needs to remember user preferences, past events, and facts.
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="semantic",
-    retrieval_score_exponent=0.3,
-    direct_boost=0.1,
-    core_access_threshold=10,
-    core_session_threshold=3,
-)
-# Search with: top_k=20, deep_recall=False
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="semantic",
+        retrieval_score_exponent=0.3,
+        direct_boost=0.1,
+        core_access_threshold=10,
+        core_session_threshold=3,
+    )
+    # Search with: top_k=20, deep_recall=False
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "semantic",
+      retrievalScoreExponent: 0.3,
+      directBoost: 0.1,
+      coreAccessThreshold: 10,
+      coreSessionThreshold: 3,
+    };
+    // Search with: limit=20, deepRecall=false
+    ```
+  </TabItem>
+</Tabs>
 
 This is the default configuration. Semantic extraction captures structured facts across sessions. Core promotion ensures frequently-referenced information (name, preferences) becomes permanent.
 
@@ -30,14 +50,30 @@ This is the default configuration. Semantic extraction captures structured facts
 
 Exact recall of what was said matters more than structured reasoning. Users may ask "what did X say about Y?"
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="raw",
-    retrieval_score_exponent=0.1,  # don't penalize old turns
-    run_maintenance_during_ingestion=False,  # no consolidation
-)
-# Search with: top_k=50, deep_recall=False
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="raw",
+        retrieval_score_exponent=0.1,  # don't penalize old turns
+        run_maintenance_during_ingestion=False,  # no consolidation
+    )
+    # Search with: top_k=50, deep_recall=False
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "raw",
+      retrievalScoreExponent: 0.1, // don't penalize old turns
+      runMaintenanceDuringIngestion: false, // no consolidation
+    };
+    // Search with: limit=50, deepRecall=false
+    ```
+  </TabItem>
+</Tabs>
 
 Raw mode stores every turn verbatim. Low alpha keeps old turns retrievable. Disable maintenance to prevent consolidation from merging turns.
 
@@ -45,14 +81,30 @@ Raw mode stores every turn verbatim. Low alpha keeps old turns retrievable. Disa
 
 Need structured facts AND exact quotes. Willing to pay the storage and LLM cost.
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="hybrid",
-    retrieval_score_exponent=0.2,
-    direct_boost=0.1,
-)
-# Search with: top_k=30, deep_recall=True
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="hybrid",
+        retrieval_score_exponent=0.2,
+        direct_boost=0.1,
+    )
+    # Search with: top_k=30, deep_recall=True
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "hybrid",
+      retrievalScoreExponent: 0.2,
+      directBoost: 0.1,
+    };
+    // Search with: limit=30, deepRecall=true
+    ```
+  </TabItem>
+</Tabs>
 
 Hybrid stores both extracted facts and raw turns. Deep recall ensures superseded originals can still surface when needed. Good for applications where users ask both "what is the user's job?" and "what exactly did they say on March 12?"
 
@@ -60,18 +112,39 @@ Hybrid stores both extracted facts and raw turns. Deep recall ensures superseded
 
 Long-term, high-fidelity recall. Nothing should be forgotten.
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="semantic",
-    retrieval_score_exponent=0.1,  # nearly ignore decay
-    core_access_threshold=5,       # promote to core faster
-    core_stability_threshold=0.7,
-    cold_storage_ttl_days=365,     # keep cold memories longer
-    consolidation_retention_threshold=0.10,  # only consolidate very faded
-    custom_extraction_instructions="Focus on medical conditions, medications, allergies, and treatment history.",
-)
-# Search with: top_k=60, deep_recall=True
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="semantic",
+        retrieval_score_exponent=0.1,  # nearly ignore decay
+        core_access_threshold=5,       # promote to core faster
+        core_stability_threshold=0.7,
+        cold_storage_ttl_days=365,     # keep cold memories longer
+        consolidation_retention_threshold=0.10,  # only consolidate very faded
+        custom_extraction_instructions="Focus on medical conditions, medications, allergies, and treatment history.",
+    )
+    # Search with: top_k=60, deep_recall=True
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "semantic",
+      retrievalScoreExponent: 0.1, // nearly ignore decay
+      coreAccessThreshold: 5, // promote to core faster
+      coreStabilityThreshold: 0.7,
+      coldStorageTtlDays: 365, // keep cold memories longer
+      consolidationRetentionThreshold: 0.1, // only consolidate very faded
+      customExtractionInstructions:
+        "Focus on medical conditions, medications, allergies, and treatment history.",
+    };
+    // Search with: limit=60, deepRecall=true
+    ```
+  </TabItem>
+</Tabs>
 
 Low alpha means old memories rank nearly as high as recent ones. Aggressive core promotion protects important information. Long cold storage TTL and conservative consolidation prevent data loss.
 
@@ -79,17 +152,36 @@ Low alpha means old memories rank nearly as high as recent ones. Aggressive core
 
 Information changes frequently. Old data should fade in favor of updates.
 
-```python
-config = CognitiveMemoryConfig(
-    extraction_mode="semantic",
-    retrieval_score_exponent=0.7,  # strong recency bias
-    direct_boost=0.05,            # less stability reinforcement
-    cold_migration_days=3,        # move to cold faster
-    cold_storage_ttl_days=30,     # purge cold data quickly
-    consolidation_retention_threshold=0.30,  # consolidate earlier
-)
-# Search with: top_k=10, deep_recall=False
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        extraction_mode="semantic",
+        retrieval_score_exponent=0.7,  # strong recency bias
+        direct_boost=0.05,            # less stability reinforcement
+        cold_migration_days=3,        # move to cold faster
+        cold_storage_ttl_days=30,     # purge cold data quickly
+        consolidation_retention_threshold=0.30,  # consolidate earlier
+    )
+    # Search with: top_k=10, deep_recall=False
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      extractionMode: "semantic",
+      retrievalScoreExponent: 0.7, // strong recency bias
+      directBoost: 0.05, // less stability reinforcement
+      coldMigrationDays: 3, // move to cold faster
+      coldStorageTtlDays: 30, // purge cold data quickly
+      consolidationRetentionThreshold: 0.3, // consolidate earlier
+    };
+    // Search with: limit=10, deepRecall=false
+    ```
+  </TabItem>
+</Tabs>
 
 High alpha suppresses old memories. Fast cold migration and short TTL keep the active set small and current.
 
@@ -97,18 +189,51 @@ High alpha suppresses old memories. Fast cold migration and short TTL keep the a
 
 Migrating historical data. Speed matters, not real-time behavior.
 
-```python
-config = CognitiveMemoryConfig(
-    run_maintenance_during_ingestion=False,
-)
-mem = CognitiveMemory(config=config)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        run_maintenance_during_ingestion=False,
+    )
+    mem = CognitiveMemory(config=config)
 
-for conv in conversations:
-    await mem.extract_and_store(conv, session_id=..., run_tick=False)
+    for conv in conversations:
+        await mem.extract_and_store(conv, session_id=..., run_tick=False)
 
-# Run maintenance once at the end — resolves queued conflicts, cold migration, TTL expiry, consolidation
-await mem.tick()
-```
+    # Run maintenance once at the end — resolves queued conflicts, cold migration, TTL expiry, consolidation
+    await mem.tick()
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+      type LLMProvider,
+    } from "cognitive-memory";
+
+    declare const conversations: string[];
+    declare const llm: LLMProvider;
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "benchmark",
+      config: {
+        runMaintenanceDuringIngestion: false,
+      },
+    });
+
+    for (const [index, conv] of conversations.entries()) {
+      await mem.extractAndStore(conv, `archive-${index + 1}`, llm);
+    }
+
+    // Run maintenance once at the end: resolves queued conflicts, cold migration, TTL expiry, consolidation
+    await mem.tick(llm);
+    ```
+  </TabItem>
+</Tabs>
 
 Disabling maintenance during ingestion avoids cold-migration checks and conflict resolution LLM calls after every batch. Conflict candidates are still tagged during ingestion (zero-cost cosine checks) and resolved in bulk when you call `tick()` at the end.
 
@@ -118,7 +243,7 @@ Disabling maintenance during ingestion avoids cold-migration checks and conflict
 
 ### Extraction mode
 
-`extraction_mode` controls how conversations become memories. See [Ingestion Pipeline](/concepts/ingestion/) for detailed comparison.
+`extraction_mode` controls how conversations become memories. See [Ingestion Pipeline](/cognitive-memory/concepts/ingestion/) for detailed comparison.
 
 | Mode | LLM cost | Storage | Best for |
 |------|:--------:|:-------:|----------|
@@ -142,17 +267,38 @@ Upgrade to `gpt-4o` if extraction quality is the bottleneck (e.g., missing impor
 
 `custom_extraction_instructions` prepends domain-specific guidance to the extraction prompt.
 
-```python
-# Medical assistant
-config = CognitiveMemoryConfig(
-    custom_extraction_instructions="Focus on medical conditions, medications, dosages, allergies, and treatment outcomes. Classify all medical facts as core."
-)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Medical assistant
+    config = CognitiveMemoryConfig(
+        custom_extraction_instructions="Focus on medical conditions, medications, dosages, allergies, and treatment outcomes. Classify all medical facts as core."
+    )
 
-# E-commerce
-config = CognitiveMemoryConfig(
-    custom_extraction_instructions="Track product preferences, sizes, brands, past purchases, and return history."
-)
-```
+    # E-commerce
+    config = CognitiveMemoryConfig(
+        custom_extraction_instructions="Track product preferences, sizes, brands, past purchases, and return history."
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    // Medical assistant
+    const medicalConfig: Partial<CognitiveMemoryConfig> = {
+      customExtractionInstructions:
+        "Focus on medical conditions, medications, dosages, allergies, and treatment outcomes. Classify all medical facts as core.",
+    };
+
+    // E-commerce
+    const ecommerceConfig: Partial<CognitiveMemoryConfig> = {
+      customExtractionInstructions:
+        "Track product preferences, sizes, brands, past purchases, and return history.",
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 Use this when the default extraction misses domain-specific information or assigns wrong importance/categories.
 
@@ -183,10 +329,20 @@ Our benchmarks showed +14pp accuracy improvement going from k=10 to k=60. If you
 
 ### Deep recall (search parameter)
 
-```python
-response = await mem.search(query, deep_recall=True)
-results = response.results
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    response = await mem.search(query, deep_recall=True)
+    results = response.results
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({ query, deepRecall: true });
+    const { results } = response;
+    ```
+  </TabItem>
+</Tabs>
 
 When enabled, superseded memories (originals that were consolidated into summaries) are included in search results with a penalty (`deep_recall_penalty`, default 0.5x score).
 

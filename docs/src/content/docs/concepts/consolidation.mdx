@@ -3,9 +3,11 @@ title: Consolidation
 description: How fading memories are compressed into summaries through LLM-powered consolidation.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## What is consolidation?
 
-Consolidation groups semantically similar fading memories and compresses them into a single summary memory. The originals are preserved in cold storage (accessible via [deep recall](/concepts/deep-recall/)), while the summary takes their place in the hot tier.
+Consolidation groups semantically similar fading memories and compresses them into a single summary memory. The originals are preserved in cold storage (accessible via [deep recall](/cognitive-memory/concepts/deep-recall/)), while the summary takes their place in the hot tier.
 
 This mirrors memory consolidation in neuroscience: during sleep, the brain replays and compresses episodic memories into more abstract semantic representations.
 
@@ -13,9 +15,18 @@ This mirrors memory consolidation in neuroscience: during sleep, the brain repla
 
 Consolidation runs as part of the maintenance `tick()`. By default, it triggers every 5 ingestion cycles:
 
-```python
-await mem.tick()  # runs cold migration, TTL expiry, and consolidation
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    await mem.tick()  # runs cold migration, TTL expiry, and consolidation
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    await mem.tick(llm); // runs cold migration, TTL expiry, and consolidation
+    ```
+  </TabItem>
+</Tabs>
 
 ## The consolidation algorithm
 
@@ -34,16 +45,36 @@ Only memories of the same category are consolidated together. Episodic memories 
 
 Within each category, use greedy clustering with cosine similarity:
 
-```python
-for i, mem_i in enumerate(mems):
-    group = [mem_i]
-    for j, mem_j in enumerate(mems):
-        sim = cosine_similarity(mem_i.embedding, mem_j.embedding)
-        if sim >= consolidation_similarity_threshold:  # default: 0.70
-            group.append(mem_j)
-            if len(group) >= group_size:  # default: 5
-                break
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    for i, mem_i in enumerate(mems):
+        group = [mem_i]
+        for j, mem_j in enumerate(mems):
+            sim = cosine_similarity(mem_i.embedding, mem_j.embedding)
+            if sim >= consolidation_similarity_threshold:  # default: 0.70
+                group.append(mem_j)
+                if len(group) >= group_size:  # default: 5
+                    break
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    for (const memI of memories) {
+      const group = [memI];
+      for (const memJ of memories) {
+        const sim = cosineSimilarity(memI.embedding, memJ.embedding);
+        if (sim >= consolidationSimilarityThreshold) {
+          group.push(memJ);
+          if (group.length >= groupSize) {
+            break;
+          }
+        }
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 A group must have at least `consolidation_group_size` (default: 5) members to qualify.
 
@@ -107,13 +138,28 @@ After consolidation:
 
 ## Configuration
 
-```python
-config = CognitiveMemoryConfig(
-    consolidation_retention_threshold=0.20,     # memories below this are candidates
-    consolidation_group_size=5,                 # minimum group size
-    consolidation_similarity_threshold=0.70,    # minimum similarity for grouping
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    config = CognitiveMemoryConfig(
+        consolidation_retention_threshold=0.20,     # memories below this are candidates
+        consolidation_group_size=5,                 # minimum group size
+        consolidation_similarity_threshold=0.70,    # minimum similarity for grouping
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { CognitiveMemoryConfig } from "cognitive-memory";
+
+    const config: Partial<CognitiveMemoryConfig> = {
+      consolidationRetentionThreshold: 0.2, // memories below this are candidates
+      consolidationGroupSize: 5, // minimum group size
+      consolidationSimilarityThreshold: 0.7, // minimum similarity for grouping
+    };
+    ```
+  </TabItem>
+</Tabs>
 
 ### Tuning tips
 

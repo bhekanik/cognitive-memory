@@ -15,15 +15,30 @@ When you call `search()`, the query goes through a multi-stage pipeline that com
 
 The query text is embedded, and the hot store is searched for the top candidates by cosine similarity:
 
-```python
-candidates = await self.adapter.search_similar(
-    query_embedding,
-    top_k=top_k * rerank_factor,
-    include_superseded=deep_recall,
-    include_cold=deep_recall,
-    include_stubs=False,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    candidates = await self.adapter.search_similar(
+        query_embedding,
+        top_k=top_k * rerank_factor,
+        include_superseded=deep_recall,
+        include_cold=deep_recall,
+        include_stubs=False,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const candidates = await this.adapter.vectorSearch(queryEmbedding, {
+      userId: this.config.userId,
+      limit: limit * rerankFactor,
+      includeSuperseded: deepRecall,
+      includeCold: deepRecall,
+      includeStubs: false,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 When reranking is enabled, the search can request `top_k * rerank_factor` candidates before slicing back to the requested `top_k`.
 
@@ -31,11 +46,23 @@ When reranking is enabled, the search can request `top_k * rerank_factor` candid
 
 When `hybrid_search` / `hybridSearch` is enabled, a parallel BM25 lexical search runs against the adapter's `search_lexical` / `searchLexical` method:
 
-```python
-lexical_candidates = await self.adapter.search_lexical(
-    query_text, top_k=k_sparse,
-)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    lexical_candidates = await self.adapter.search_lexical(
+        query_text, top_k=k_sparse,
+    )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const lexicalCandidates = await this.adapter.searchLexical(queryText, {
+      userId: this.config.userId,
+      limit: kSparse,
+    });
+    ```
+  </TabItem>
+</Tabs>
 
 Results are unioned with the dense candidates from Stage 1. Duplicate memories (found by both paths) are kept once. This ensures exact keyword matches surface even when they aren't the closest vectors.
 
@@ -59,7 +86,7 @@ Candidates are sorted by combined score. If reranking is disabled, the requested
 
 ### Stage 2b: Validity filtering (v6)
 
-Candidates with semantic type `plan` or `transient_state` whose validity window has expired are removed from the candidate pool, unless `include_expired_transients=True` or deep recall is active with `include_expired_in_deep_recall=True`. See [Deep Recall — Validity-based filtering](/concepts/deep-recall/#validity-based-filtering) for details.
+Candidates with semantic type `plan` or `transient_state` whose validity window has expired are removed from the candidate pool, unless transient filtering is disabled or deep recall is active with `include_expired_in_deep_recall` / `includeExpiredInDeepRecall` enabled. See [Deep Recall — Validity-based filtering](/cognitive-memory/concepts/deep-recall/#validity-based-filtering) for details.
 
 ### Stage 2c: LLM reranking (optional)
 
@@ -69,13 +96,28 @@ When `rerank_enabled` / `rerankEnabled` is `True` and an LLM provider is availab
 
 For each direct result, the engine looks up its association graph:
 
-```python
-for result in direct_results:
-    associated = self.get_associated_memories(result.memory, now)
-    for assoc_mem, assoc_weight in associated:
-        # Score: sim * R^alpha * association_weight
-        ...
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    for result in direct_results:
+        associated = self.get_associated_memories(result.memory, now)
+        for assoc_mem, assoc_weight in associated:
+            # Score: sim * R^alpha * association_weight
+            ...
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    for (const result of directResults) {
+      const associated = await this.getAssociatedMemories(result.memory, now);
+      for (const { memory, weight } of associated) {
+        // Score: sim * R^alpha * association weight
+        // ...
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 Associated memories are scored by their own similarity and retention, multiplied by the association weight. Only associations with weight >= 0.3 (after decay) are activated.
 
@@ -100,10 +142,21 @@ Cold memories that were retrieved via associations are migrated back to hot stor
 
 Every memory in the result set is checked against the core promotion criteria:
 
-```python
-for result in all_results:
-    self.check_core_promotion(result.memory)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    for result in all_results:
+        self.check_core_promotion(result.memory)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    for (const result of allResults) {
+      await this.checkCorePromotion(result.memory);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 If a memory has access_count >= 10, stability >= 0.85, and sessions >= 3, it's promoted to core.
 
@@ -111,11 +164,24 @@ If a memory has access_count >= 10, stability >= 0.85, and sessions >= 3, it's p
 
 All pairs of direct results have their association links strengthened:
 
-```python
-for i in range(len(direct_mems)):
-    for j in range(i + 1, len(direct_mems)):
-        self.strengthen_association(direct_mems[i], direct_mems[j], now)
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    for i in range(len(direct_mems)):
+        for j in range(i + 1, len(direct_mems)):
+            self.strengthen_association(direct_mems[i], direct_mems[j], now)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    for (let i = 0; i < directMemories.length; i++) {
+      for (let j = i + 1; j < directMemories.length; j++) {
+        await this.strengthenAssociation(directMemories[i], directMemories[j], now);
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 This creates new associations (or strengthens existing ones) between memories that co-occur in search results. Over time, this builds a rich associative graph that reflects query patterns.
 
@@ -123,11 +189,24 @@ This creates new associations (or strengthens existing ones) between memories th
 
 Direct and associative results are merged, deduplicated by memory ID, sorted by combined score, and truncated to top-k:
 
-```python
-all_results = direct_results + associative_results
-all_results.sort(key=lambda x: x.combined_score, reverse=True)
-return all_results[:top_k]
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    all_results = direct_results + associative_results
+    all_results.sort(key=lambda x: x.combined_score, reverse=True)
+    return all_results[:top_k]
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const allResults = [...directResults, ...associativeResults]
+      .sort((a, b) => b.combinedScore - a.combinedScore)
+      .slice(0, limit);
+
+    return allResults;
+    ```
+  </TabItem>
+</Tabs>
 
 ## What the caller receives (v6 breaking change)
 
@@ -152,7 +231,7 @@ In v6, `search()` returns a **`SearchResponse`** wrapper instead of a bare list.
 
     @dataclass
     class SearchTrace:
-        stages: list[StageTrace]
+        stages: dict[str, StageTrace]
         total_ms: float
         total_tokens: int    # sum of all prompt + completion tokens across stages
 
@@ -184,18 +263,17 @@ In v6, `search()` returns a **`SearchResponse`** wrapper instead of a bare list.
     }
 
     interface SearchTrace {
-        stages: StageTrace[];
-        totalMs: number;
+        stages: Record<string, StageTrace>;
+        totalWallMs: number;
         totalTokens: number;       // sum of all prompt + completion tokens across stages
     }
 
     interface StageTrace {
         name: string;
         candidateCount: number;
-        survivorCount: number;
-        durationMs: number;
-        promptTokens: number;      // LLM prompt tokens used (0 for non-LLM stages)
-        completionTokens: number;  // LLM completion tokens used (0 for non-LLM stages)
+        wallMs: number;
+        promptTokens?: number;      // LLM prompt tokens used (0 for non-LLM stages)
+        completionTokens?: number;  // LLM completion tokens used (0 for non-LLM stages)
     }
     ```
   </TabItem>
@@ -205,11 +283,27 @@ In v6, `search()` returns a **`SearchResponse`** wrapper instead of a bare list.
 
 The `SearchTrace` attached to every response provides full visibility into the pipeline. Each `StageTrace` records the stage name, how many candidates entered and survived, and wall-clock time. This is useful for debugging relevance issues, tuning `top_k` multipliers, and understanding why specific memories did or did not appear.
 
-```python
-response = await mem.search("coffee preferences")
-for stage in response.trace.stages:
-    print(f"{stage.name}: {stage.candidate_count} -> {stage.survivor_count} ({stage.duration_ms:.1f}ms)")
-```
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    response = await mem.search("coffee preferences")
+    for name, stage in response.trace.stages.items():
+        print(f"{name}: {stage.candidate_count} candidates ({stage.wall_ms:.1f}ms)")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({
+      query: "coffee preferences",
+      trace: true,
+    });
+
+    for (const [name, stage] of Object.entries(response.trace?.stages ?? {})) {
+      console.log(`${name}: ${stage.candidateCount} candidates (${stage.wallMs.toFixed(1)}ms)`);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ## Pipeline summary
 

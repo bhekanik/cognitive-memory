@@ -3,6 +3,8 @@ title: Adapter Specification
 description: The canonical contract that all storage adapters must implement.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Overview
 
 Every Cognitive Memory adapter, whether built-in or custom, must implement the `MemoryAdapter` abstract class. This page documents the canonical contract for both Python and TypeScript.
@@ -206,17 +208,36 @@ Bulk update cached retention scores. For adapters that compute retention on-the-
 
 Execute a callback within a transaction. For adapters without transaction support, simply call the callback directly.
 
-```python
-# Adapter with transactions (e.g., Postgres)
-async def transaction(self, callback):
-    async with self.pool.acquire() as conn:
-        async with conn.transaction():
-            return await callback(TransactionAdapter(conn))
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Adapter with transactions (e.g., Postgres)
+    async def transaction(self, callback):
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                return await callback(TransactionAdapter(conn))
 
-# Adapter without transactions (e.g., InMemory)
-async def transaction(self, callback):
-    return await callback(self)
-```
+    # Adapter without transactions (e.g., InMemory)
+    async def transaction(self, callback):
+        return await callback(self)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    // Adapter with transactions (e.g., Postgres)
+    async transaction<T>(callback: (adapter: MemoryAdapter) => Promise<T>): Promise<T> {
+      return this.pool.transaction(async (client) => {
+        return callback(new TransactionAdapter(client));
+      });
+    }
+
+    // Adapter without transactions (e.g., InMemory)
+    async transaction<T>(callback: (adapter: MemoryAdapter) => Promise<T>): Promise<T> {
+      return callback(this);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 

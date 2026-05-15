@@ -3,6 +3,8 @@ title: Migration Guide
 description: How to migrate from Mem0, FadeMem, or naive RAG to Cognitive Memory.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 ## Migrating from Mem0
 
 ### Conceptual mapping
@@ -21,71 +23,159 @@ description: How to migrate from Mem0, FadeMem, or naive RAG to Cognitive Memory
 
 #### 1. Replace the client
 
-```python
-# Before (Mem0)
-from mem0 import Memory
-m = Memory()
-m.add("User likes coffee", user_id="user-1")
-results = m.search("coffee", user_id="user-1")
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Before (Mem0)
+    from mem0 import Memory
+    m = Memory()
+    m.add("User likes coffee", user_id="user-1")
+    results = m.search("coffee", user_id="user-1")
 
-# After (Cognitive Memory)
-from cognitive_memory import SyncCognitiveMemory
-mem = SyncCognitiveMemory()
-mem.add("User likes coffee", category="semantic", importance=0.5)
-response = mem.search("coffee")
-results = response.results
-```
+    # After (Cognitive Memory)
+    from cognitive_memory import SyncCognitiveMemory
+    mem = SyncCognitiveMemory()
+    mem.add("User likes coffee", category="semantic", importance=0.5)
+    response = mem.search("coffee")
+    results = response.results
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+    } from "cognitive-memory";
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "user-1",
+    });
+
+    await mem.store({
+      content: "User likes coffee",
+      category: "semantic",
+      importance: 0.5,
+    });
+
+    const response = await mem.search({ query: "coffee" });
+    const { results } = response;
+    ```
+  </TabItem>
+</Tabs>
 
 #### 2. Replace conversation ingestion
 
-```python
-# Before (Mem0)
-m.add(conversation_text, user_id="user-1")
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Before (Mem0)
+    m.add(conversation_text, user_id="user-1")
 
-# After (Cognitive Memory)
-mem.extract_and_store(conversation_text, session_id="s1")
-```
+    # After (Cognitive Memory)
+    mem.extract_and_store(conversation_text, session_id="s1")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { LLMProvider } from "cognitive-memory";
+
+    declare const conversationText: string;
+    declare const llm: LLMProvider;
+
+    await mem.extractAndStore(conversationText, "s1", llm);
+    ```
+  </TabItem>
+</Tabs>
 
 Cognitive Memory's extraction is more thorough — it extracts every discrete fact rather than summarizing. You may get more memories per conversation, which is intentional.
 
 #### 3. Handle search results
 
-```python
-# Before (Mem0)
-results = m.search("coffee", user_id="user-1")
-for r in results:
-    print(r["memory"])
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Before (Mem0)
+    results = m.search("coffee", user_id="user-1")
+    for r in results:
+        print(r["memory"])
 
-# After (Cognitive Memory)
-response = mem.search("coffee")
-for r in response.results:
-    print(r.memory.content)
-    print(f"  score={r.combined_score:.3f}")
-    print(f"  retention={r.retention_score:.3f}")
-```
+    # After (Cognitive Memory)
+    response = mem.search("coffee")
+    for r in response.results:
+        print(r.memory.content)
+        print(f"  score={r.combined_score:.3f}")
+        print(f"  retention={r.retention_score:.3f}")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({ query: "coffee" });
+
+    for (const result of response.results) {
+      console.log(result.memory.content);
+      console.log(`  score=${result.combinedScore.toFixed(3)}`);
+      console.log(`  retention=${result.retentionScore.toFixed(3)}`);
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 #### 4. Data migration
 
 To migrate existing Mem0 data into Cognitive Memory:
 
-```python
-from cognitive_memory import SyncCognitiveMemory, MemoryCategory
-from datetime import datetime
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    from cognitive_memory import SyncCognitiveMemory, MemoryCategory
+    from datetime import datetime
 
-mem = SyncCognitiveMemory()
+    mem = SyncCognitiveMemory()
 
-# Export from Mem0
-mem0_memories = m.get_all(user_id="user-1")
+    # Export from Mem0
+    mem0_memories = m.get_all(user_id="user-1")
 
-# Import into Cognitive Memory
-for m0 in mem0_memories:
-    mem.add(
-        content=m0["memory"],
-        category=MemoryCategory.SEMANTIC,  # default; adjust as needed
-        importance=0.5,
-        timestamp=datetime.fromisoformat(m0.get("created_at", datetime.now().isoformat())),
-    )
-```
+    # Import into Cognitive Memory
+    for m0 in mem0_memories:
+        mem.add(
+            content=m0["memory"],
+            category=MemoryCategory.SEMANTIC,  # default; adjust as needed
+            importance=0.5,
+            timestamp=datetime.fromisoformat(m0.get("created_at", datetime.now().isoformat())),
+        )
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import {
+      CognitiveMemory,
+      HashEmbeddingProvider,
+      InMemoryAdapter,
+    } from "cognitive-memory";
+
+    type LegacyMemory = { memory: string; createdAt?: string };
+    declare const mem0Memories: LegacyMemory[];
+
+    const mem = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider: new HashEmbeddingProvider(),
+      userId: "user-1",
+    });
+
+    for (const legacy of mem0Memories) {
+      await mem.store({
+        content: legacy.memory,
+        category: "semantic",
+        importance: 0.5,
+        metadata: { createdAt: legacy.createdAt },
+      });
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### What you gain
 
@@ -141,29 +231,55 @@ Multi-hop queries are where the association graph is most likely to matter.
 
 #### 1. Replace chunking with extraction
 
-```python
-# Before (RAG)
-chunks = text_splitter.split(conversation)
-embeddings = embed_batch(chunks)
-vector_db.upsert(chunks, embeddings)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Before (RAG)
+    chunks = text_splitter.split(conversation)
+    embeddings = embed_batch(chunks)
+    vector_db.upsert(chunks, embeddings)
 
-# After (Cognitive Memory)
-mem.extract_and_store(conversation, session_id="s1")
-```
+    # After (Cognitive Memory)
+    mem.extract_and_store(conversation, session_id="s1")
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    import type { LLMProvider } from "cognitive-memory";
+
+    declare const conversation: string;
+    declare const llm: LLMProvider;
+
+    await mem.extractAndStore(conversation, "s1", llm);
+    ```
+  </TabItem>
+</Tabs>
 
 This is the biggest change. Instead of blindly chunking text, Cognitive Memory uses an LLM to extract discrete facts. Each memory is a single, precise fact rather than a text fragment.
 
 #### 2. Replace similarity search
 
-```python
-# Before (RAG)
-results = vector_db.query(embed(query), top_k=5)
-context = "\n".join(r.text for r in results)
+<Tabs syncKey="lang">
+  <TabItem label="Python">
+    ```python
+    # Before (RAG)
+    results = vector_db.query(embed(query), top_k=5)
+    context = "\n".join(r.text for r in results)
 
-# After (Cognitive Memory)
-response = mem.search(query, top_k=10)
-context = "\n".join(r.memory.content for r in response.results)
-```
+    # After (Cognitive Memory)
+    response = mem.search(query, top_k=10)
+    context = "\n".join(r.memory.content for r in response.results)
+    ```
+  </TabItem>
+  <TabItem label="TypeScript">
+    ```typescript
+    const response = await mem.search({ query, limit: 10 });
+    const context = response.results
+      .map((result) => result.memory.content)
+      .join("\n");
+    ```
+  </TabItem>
+</Tabs>
 
 #### 3. Remove manual metadata management
 

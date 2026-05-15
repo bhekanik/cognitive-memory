@@ -11,6 +11,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 import Figure from '../../components/Figure.astro';
 import PillRow from '../../components/PillRow.astro';
 import CommitmentTable from '../../components/CommitmentTable.astro';
+import DocsMap from '../../components/DocsMap.astro';
 import MemoryLifecycle from '../../components/animations/MemoryLifecycle.astro';
 import DecayCurve from '../../components/animations/DecayCurve.astro';
 import PipelineDiagram from '../../components/animations/PipelineDiagram.astro';
@@ -31,7 +32,7 @@ Cognitive Memory is the missing middle: what happens to a memory after it's stor
 
 <PillRow pills={[
   { num: "48.5%", label: "multi-hop F1 on LoCoMo", qual: "1540 QA · LLM-as-judge" },
-  { num: "70.2%", label: "task-averaged on LongMemEval-S", qual: "comparable to ENGRAM-class systems" },
+  { num: "71.6%", label: "task-averaged on LongMemEval-S", qual: "comparable to ENGRAM-class systems" },
   { num: "100%",  label: "critical-fact retention on LTI-Bench v2", qual: "controlled 30-day, 42 probes" }
 ]} />
 
@@ -73,7 +74,7 @@ Memories aren't just tagged at extraction. They earn protected status by being a
   { num: "03", title: "Two-tier retrieval boosting.",        body: "Direct hits reinforce more than associative pull-ins. Active recall vs priming.",                                        spec: "direct +0.10 · associative +0.03",                                                          accent: "green" },
   { num: "04", title: "Bidirectional weighted associations.", body: "Memories that arrive together get linked. Memories that surface together get strengthened. Links decay too.",            spec: "<code>τ = 90 days · cutoff 0.30</code>",                                                  accent: "orange" },
   { num: "05", title: "Hot / cold / stub tiering.",          body: "The hot index converges to 7–11% of total memories. Cold storage is reachable through deep recall.",                     spec: "7 days at floor → cold<br>180 days cold → stub",                                          accent: "pink" },
-  { num: "06", title: "Reversible consolidation.",           body: "Clusters of fading memories get summarised. Originals stay in cold storage with backlinks. Nothing is destroyed.",        spec: "retention &lt; 0.20 · ≥ 5 memories · cosine ≥ 0.70",                                       accent: "purple" }
+  { num: "06", title: "Reversible consolidation.",           body: "Clusters of fading memories get summarised. Originals stay in cold storage with backlinks until retention policy converts them to stubs.",        spec: "retention &lt; 0.20 · ≥ 5 memories · cosine ≥ 0.70",                                       accent: "purple" }
 ]} />
 
 </section>
@@ -145,6 +146,40 @@ A memory at 20% retention keeps 62% of its similarity score. Old-but-relevant be
 </section>
 
 <section>
+<span class="section-marker">§ Use it</span>
+
+## Start with the job.
+
+<DocsMap items={[
+  {
+    kicker: "First run",
+    title: "Python quickstart",
+    body: "Install the SDK, store one memory, and inspect the scored result.",
+    href: "getting-started/python/",
+  },
+  {
+    kicker: "First run",
+    title: "TypeScript quickstart",
+    body: "Wire an adapter and embedding provider, then run the same memory flow.",
+    href: "getting-started/typescript/",
+  },
+  {
+    kicker: "Recipes",
+    title: "Build real memory flows",
+    body: "Copy task-shaped examples for persistence, batch import, tracing, and tenant isolation.",
+    href: "guides/recipes/",
+  },
+  {
+    kicker: "Tune",
+    title: "Choose retrieval behavior",
+    body: "Adjust decay, deep recall, maintenance, and consolidation for your workload.",
+    href: "guides/tuning/",
+  },
+]} />
+
+</section>
+
+<section>
 <span class="section-marker">§ New in v0.4.0</span>
 
 <div class="whats-new">
@@ -168,15 +203,15 @@ A memory at 20% retention keeps 62% of its similarity score. Old-but-relevant be
 <span class="section-marker">§ Read more</span>
 
 <div class="read-more">
-  <a href="https://www.papermark.com/view/cmou9iqe20023l104xpvd5osl">
+  <a href="https://github.com/planetaryescape/cognitive-memory-benchmarks/blob/main/paper/cognitive-memory-arxiv-paper-v2.pdf">
     <strong>The paper.</strong>
     <span>Architecture, ablations, and benchmark methodology in full.</span>
   </a>
-  <a href="/getting-started/python/">
+  <a href="getting-started/python/">
     <strong>The docs.</strong>
     <span>Quickstart, adapter contracts, concept walkthroughs, tuning recipes.</span>
   </a>
-  <a href="https://github.com/bhekanik/cognitive-memory">
+  <a href="https://github.com/planetaryescape/cognitive-memory">
     <strong>The repo.</strong>
     <span>SDKs on GitHub. Benchmark suite — LoCoMo, LongMemEval-S, LTI-Bench v2 — lives separately.</span>
   </a>
