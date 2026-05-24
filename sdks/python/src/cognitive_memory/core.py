@@ -47,6 +47,41 @@ def _session_roots(session_ids: set[str]) -> set[str]:
     return {re.sub(r"_perspective_.*$", "", sid) for sid in session_ids}
 
 
+def _close_validity_window(old: Memory, new: Memory, now: datetime, relation_type: str) -> None:
+    """Preserve old state while marking temporal supersession for the experiment path."""
+    boundary = new.valid_from or new.created_at or now
+    old.valid_until = boundary
+    if not isinstance(old.temporal, dict):
+        old.temporal = {}
+    valid_time = old.temporal.get("valid_time")
+    if not isinstance(valid_time, dict):
+        valid_time = {}
+    valid_time["valid_to"] = boundary.isoformat()
+    valid_time["status"] = "superseded"
+    old.temporal["valid_time"] = valid_time
+    relations = old.temporal.get("relations")
+    if not isinstance(relations, list):
+        relations = []
+    relations.append({
+        "type": relation_type,
+        "target_memory_id": new.id,
+        "confidence": 0.8,
+    })
+    old.temporal["relations"] = relations
+
+    if new.valid_from is None:
+        new.valid_from = boundary
+    if not isinstance(new.temporal, dict):
+        new.temporal = {}
+    new_valid_time = new.temporal.get("valid_time")
+    if not isinstance(new_valid_time, dict):
+        new_valid_time = {}
+    new_valid_time.setdefault("valid_from", boundary.isoformat())
+    if new_valid_time.get("status") in (None, "", "unknown"):
+        new_valid_time["status"] = "current"
+    new.temporal["valid_time"] = new_valid_time
+
+
 class CognitiveMemory:
     """
     Main interface for the cognitive-memory system.
@@ -353,6 +388,7 @@ class CognitiveMemory:
                 if was_core:
                     existing.category = MemoryCategory.SEMANTIC
                 existing.contradicted_by = new_memory.id
+                _close_validity_window(existing, new_memory, now, "updates")
                 new_memory.importance = max(new_memory.importance, existing.importance)
                 if conflict_type == "CONTRADICTION" and was_core:
                     new_memory.category = MemoryCategory.CORE
@@ -418,10 +454,11 @@ class CognitiveMemory:
                 if was_core:
                     existing_mem.category = MemoryCategory.SEMANTIC
                 existing_mem.contradicted_by = new_mem.id
+                _close_validity_window(existing_mem, new_mem, now, "updates")
                 new_mem.importance = max(new_mem.importance, existing_mem.importance)
                 if conflict_type == "CONTRADICTION" and was_core:
                     new_mem.category = MemoryCategory.CORE
-                demoted.append(existing_mem)
+                demoted.extend([existing_mem, new_mem])
                 resolved += 1
 
         if demoted:

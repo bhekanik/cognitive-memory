@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .llm import LLMProvider, OpenAILLMProvider
@@ -34,6 +35,112 @@ def _parse_optional_datetime(value) -> Optional[datetime]:
         except (ValueError, TypeError):
             return None
     return None
+
+
+def _resolve_relative_datetime(raw: str, reference: datetime) -> Optional[datetime]:
+    """Resolve a natural-language date phrase against a session timestamp."""
+    if not raw or not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    lowered = text.lower()
+
+    # Deterministic fallbacks keep core behavior testable when optional
+    # dateparser is not installed in a local SDK checkout.
+    if lowered in {"yesterday", "the day before"}:
+        return reference - timedelta(days=1)
+    if lowered in {"today", "now"}:
+        return reference
+    if lowered == "tomorrow":
+        return reference + timedelta(days=1)
+    if lowered in {"next month", "the next month"}:
+        month = reference.month + 1
+        year = reference.year + (1 if month > 12 else 0)
+        month = 1 if month > 12 else month
+        day = min(reference.day, calendar.monthrange(year, month)[1])
+        return reference.replace(year=year, month=month, day=day)
+    if lowered in {"last month", "previous month"}:
+        month = reference.month - 1
+        year = reference.year - (1 if month < 1 else 0)
+        month = 12 if month < 1 else month
+        day = min(reference.day, calendar.monthrange(year, month)[1])
+        return reference.replace(year=year, month=month, day=day)
+
+    try:
+        import dateparser
+
+        parsed = dateparser.parse(
+            text,
+            settings={
+                "RELATIVE_BASE": reference,
+                "PREFER_DATES_FROM": "past",
+                "RETURN_AS_TIMEZONE_AWARE": reference.tzinfo is not None,
+            },
+        )
+        if parsed is not None:
+            return parsed
+    except Exception:
+        pass
+
+    return _parse_optional_datetime(text)
+
+
+def _iso_or_none(value: Optional[datetime]) -> Optional[str]:
+    return value.isoformat() if isinstance(value, datetime) else None
+
+
+def _normalise_event_time(value, reference: datetime) -> dict:
+    if isinstance(value, dict):
+        raw = value.get("raw_expression") or value.get("raw")
+        start = _parse_optional_datetime(value.get("start"))
+        end = _parse_optional_datetime(value.get("end"))
+        if start is None and isinstance(raw, str):
+            start = _resolve_relative_datetime(raw, reference)
+        return {
+            "start": _iso_or_none(start),
+            "end": _iso_or_none(end),
+            "granularity": value.get("granularity", "unknown"),
+            "raw_expression": raw,
+            "confidence": float(value.get("confidence", 0.6)),
+        }
+    if isinstance(value, str):
+        resolved = _resolve_relative_datetime(value, reference)
+        return {
+            "start": _iso_or_none(resolved),
+            "end": None,
+            "granularity": "unknown",
+            "raw_expression": value,
+            "confidence": 0.5 if resolved is not None else 0.0,
+        }
+    return {}
+
+
+def _normalise_temporal_metadata(
+    item: dict,
+    session_id: str,
+    timestamp: datetime,
+    valid_from: Optional[datetime],
+    valid_until: Optional[datetime],
+) -> dict:
+    valid_time = item.get("valid_time") if isinstance(item.get("valid_time"), dict) else {}
+    status = item.get("status") or valid_time.get("status") or "unknown"
+    raw_expressions = item.get("raw_time_expressions", [])
+    if not isinstance(raw_expressions, list):
+        raw_expressions = [str(raw_expressions)]
+
+    return {
+        "mentioned_at": {
+            "session_id": session_id,
+            "timestamp": timestamp.isoformat(),
+        },
+        "event_time": _normalise_event_time(item.get("event_time"), timestamp),
+        "valid_time": {
+            "valid_from": _iso_or_none(valid_from) or valid_time.get("valid_from"),
+            "valid_to": _iso_or_none(valid_until) or valid_time.get("valid_to"),
+            "status": str(status),
+        },
+        "raw_time_expressions": [str(expr) for expr in raw_expressions],
+        "relations": item.get("temporal_relations", []) if isinstance(item.get("temporal_relations"), list) else [],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +168,11 @@ For each memory, provide:
 - valid_from: (optional) ISO date string when this becomes valid. Only for time-bounded memories.
 - valid_until: (optional) ISO date string when this expires. Use for plans and transient states.
 - source_turn_ids: (optional) array of turn numbers this was extracted from (e.g. [1, 3])
+- event_time: (optional) object with start/end ISO strings, raw_expression, granularity, confidence.
+- valid_time: (optional) object with valid_from/valid_to ISO strings and status.
+- status: (optional) "planned" | "in_progress" | "completed" | "cancelled" | "hypothetical" | "current" | "superseded" | "unknown".
+- event_frame: (optional) object with event_type, subjects, action, objects, location.
+- raw_time_expressions: (optional) array of original time phrases from the text.
 
 CRITICAL RULES:
 1. NARRATE, don't interpret. Store WHAT HAPPENED, not what it means.
@@ -79,7 +191,7 @@ Conversation:
 {conversation}
 
 Respond with a JSON array only. No markdown, no preamble.
-Example: [{{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact"}}, {{"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference"}}, {{"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "valid_until": "2024-03-15T23:59:59"}}, {{"content": "Alex is currently feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state"}}, {{"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact"}}]"""
+Example: [{{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact", "valid_time": {{"status": "current"}}}}, {{"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference", "valid_time": {{"status": "current"}}}}, {{"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "event_time": {{"start": "2024-03-15T00:00:00", "raw_expression": "March 15, 2024", "granularity": "day", "confidence": 0.9}}, "valid_until": "2024-03-15T23:59:59", "status": "planned", "event_frame": {{"event_type": "plan", "subjects": ["Alex"], "action": "attend", "objects": ["dentist appointment"]}}}}, {{"content": "Alex is currently feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state", "valid_time": {{"status": "current"}}}}, {{"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact", "event_time": {{"start": "2024-03-03T00:00:00", "raw_expression": "the weekend before March 10, 2024", "granularity": "week", "confidence": 0.7}}, "status": "completed"}}]"""
 
 
 CONFLICT_PROMPT = """Does the new memory contradict or update an existing memory?
@@ -208,6 +320,12 @@ class MemoryExtractor:
             if not isinstance(source_turn_ids, list):
                 source_turn_ids = []
             source_turn_ids = [str(t) for t in source_turn_ids]
+            temporal = _normalise_temporal_metadata(
+                item, session_id, timestamp, valid_from, valid_until,
+            )
+            event_frame = item.get("event_frame", {})
+            if not isinstance(event_frame, dict):
+                event_frame = {}
 
             mem = Memory(
                 content=content,
@@ -221,6 +339,8 @@ class MemoryExtractor:
                 valid_until=valid_until,
                 ttl_seconds=ttl_seconds,
                 source_turn_ids=source_turn_ids,
+                temporal=temporal,
+                event_frame=event_frame,
             )
             mem.session_ids.add(session_id)
             memories.append(mem)
@@ -274,6 +394,16 @@ class MemoryExtractor:
                 stability=0.2,
                 created_at=timestamp,
                 last_accessed_at=timestamp,
+                temporal={
+                    "mentioned_at": {
+                        "session_id": session_id,
+                        "timestamp": timestamp.isoformat(),
+                    },
+                    "event_time": {},
+                    "valid_time": {"status": "unknown"},
+                    "raw_time_expressions": [],
+                    "relations": [],
+                },
             )
             mem.session_ids.add(session_id)
             memories.append(mem)

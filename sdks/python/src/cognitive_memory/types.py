@@ -103,6 +103,15 @@ class CognitiveMemoryConfig:
     filter_expired_transients: bool = True
     include_expired_in_deep_recall: bool = True
 
+    # Temporal reconstruction experiment (default-off)
+    temporal_query_mode: str = "off"  # "off" | "auto"
+    temporal_candidate_k: int = 80
+    temporal_final_k: int = 20
+    temporal_decay_alpha: float = 0.25
+    temporal_anchor_neighbor_boost: float = 0.30
+    temporal_validity_match_boost: float = 0.35
+    temporal_time_expression_boost: float = 0.15
+
     # Graph expansion / bridge discovery (v6)
     graph_expansion_hops: int = 1  # 0=disabled, 1 or 2
     bridge_discovery: bool = False
@@ -219,6 +228,8 @@ class Memory:
     valid_until: Optional[datetime] = None
     ttl_seconds: Optional[int] = None
     source_turn_ids: list[str] = field(default_factory=list)
+    temporal: dict = field(default_factory=dict)
+    event_frame: dict = field(default_factory=dict)
 
     @property
     def floor(self) -> float:
@@ -275,6 +286,7 @@ class SearchResponse:
     """Full search response with results, evidence chains, and optional trace."""
     results: list[SearchResult] = field(default_factory=list)
     evidence_chains: list[list[str]] = field(default_factory=list)
+    temporal_evidence: list[dict] = field(default_factory=list)
     trace: Optional[SearchTrace] = None
 
     def __len__(self) -> int:

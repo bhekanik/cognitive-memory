@@ -6,7 +6,7 @@ Uses SyncCognitiveMemory wrapper for sync test execution.
 """
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from cognitive_memory import (
     SyncCognitiveMemory,
     CognitiveMemoryConfig,
@@ -230,6 +230,30 @@ def test_cold_ttl_expiry():
     assert "[archived]" in stub.content
 
     print(f"  cold_ttl_expiry: PASS (cold -> stub after TTL)")
+
+
+def test_expiry_handles_mixed_naive_and_aware_datetimes():
+    """LLM-extracted valid_until can be aware while benchmark timestamps are naive."""
+    mem = SyncCognitiveMemory(embedder="hash")
+    engine = mem.engine
+
+    valid_until = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    plan = Memory(
+        content="User plans to visit the dentist",
+        memory_type="plan",
+        valid_until=valid_until,
+    )
+
+    assert engine._is_expired(plan, datetime(2024, 1, 2))
+
+    transient = Memory(
+        content="User is currently nervous",
+        memory_type="transient_state",
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ttl_seconds=60,
+    )
+
+    assert engine._is_expired(transient, datetime(2024, 1, 1, 0, 2))
 
 
 def test_scoring_prefers_recent():

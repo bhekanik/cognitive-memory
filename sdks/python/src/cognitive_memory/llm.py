@@ -14,6 +14,7 @@ existing code that does not pass a provider keeps working.
 from __future__ import annotations
 
 import time
+import os
 from abc import ABC, abstractmethod
 from typing import Any, Optional, TypedDict
 
@@ -64,7 +65,18 @@ class OpenAILLMProvider(LLMProvider):
         if self._client is None:
             from openai import OpenAI
 
-            self._client = OpenAI(timeout=self._timeout)
+            kwargs: dict[str, Any] = {"timeout": self._timeout}
+            chat_base_url = os.getenv("OPENAI_CHAT_BASE_URL")
+            chat_api_key = os.getenv("OPENAI_CHAT_API_KEY")
+            chat_timeout = os.getenv("OPENAI_CHAT_TIMEOUT")
+            if chat_timeout:
+                kwargs["timeout"] = float(chat_timeout)
+            if chat_base_url:
+                kwargs["base_url"] = chat_base_url
+                kwargs["api_key"] = chat_api_key or "local-chat"
+            elif chat_api_key:
+                kwargs["api_key"] = chat_api_key
+            self._client = OpenAI(**kwargs)
         return self._client
 
     def complete(self, prompt: str, **kwargs: Any) -> str:

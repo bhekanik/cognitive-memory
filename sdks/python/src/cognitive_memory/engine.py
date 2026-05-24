@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 import time as _time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import combinations
 from typing import Optional
 
@@ -32,6 +32,35 @@ from .adapters.base import MemoryAdapter
 from .embeddings import EmbeddingProvider, cosine_similarity
 
 _EXPIRABLE_TYPES = {"plan", "transient_state"}
+_TEMPORAL_QUERY_PATTERNS = (
+    "when ",
+    "what happened before",
+    "what happened after",
+    "before ",
+    "after ",
+    "first ",
+    "last ",
+    "how long",
+    "current",
+    "currently",
+    "now",
+    "still",
+    "changed",
+    "previous",
+)
+
+
+def _compare_datetimes(left: datetime, right: datetime) -> int:
+    """Compare datetimes, treating naive values as UTC when mixed with aware values."""
+    if (left.tzinfo is None) != (right.tzinfo is None):
+        if left.tzinfo is None:
+            left = left.replace(tzinfo=timezone.utc)
+        if right.tzinfo is None:
+            right = right.replace(tzinfo=timezone.utc)
+    if left.tzinfo is not None and right.tzinfo is not None:
+        left = left.astimezone(timezone.utc)
+        right = right.astimezone(timezone.utc)
+    return (left > right) - (left < right)
 
 
 def _ensure_bidirectional_association(
@@ -53,6 +82,79 @@ def _ensure_bidirectional_association(
             assoc = src.associations[tgt.id]
             assoc.weight = min(1.0, assoc.weight + weight)
             assoc.last_co_retrieval = now
+
+
+def _is_temporal_query(query_text: Optional[str]) -> bool:
+    if not query_text:
+        return False
+    q = f" {query_text.lower().strip()} "
+    return any(pattern in q for pattern in _TEMPORAL_QUERY_PATTERNS)
+
+
+def _temporal_order_mode(query_text: Optional[str]) -> str:
+    if not query_text:
+        return "score"
+    q = f" {query_text.lower().strip()} "
+    if any(token in q for token in ("current", "currently", "now", "still")):
+        return "score"
+    if any(token in q for token in (" last ", "latest", "most recent")):
+        return "reverse_chronological"
+    return "chronological"
+
+
+def _parse_temporal_iso(value) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _memory_event_time(memory: Memory) -> Optional[datetime]:
+    event_time = memory.temporal.get("event_time") if isinstance(memory.temporal, dict) else None
+    if isinstance(event_time, dict):
+        parsed = _parse_temporal_iso(event_time.get("start"))
+        if parsed is not None:
+            return parsed
+    if memory.valid_from is not None:
+        return memory.valid_from
+    mentioned = memory.temporal.get("mentioned_at") if isinstance(memory.temporal, dict) else None
+    if isinstance(mentioned, dict):
+        parsed = _parse_temporal_iso(mentioned.get("timestamp"))
+        if parsed is not None:
+            return parsed
+    return memory.created_at
+
+
+def _temporal_sort_key(result: SearchResult) -> tuple[float, str]:
+    event_time = _memory_event_time(result.memory)
+    if event_time is None:
+        return (float("inf"), result.memory.id)
+    if event_time.tzinfo is not None:
+        event_time = event_time.astimezone(timezone.utc).replace(tzinfo=None)
+    return (event_time.timestamp(), result.memory.id)
+
+
+def _temporal_evidence_item(result: SearchResult) -> dict:
+    temporal = result.memory.temporal if isinstance(result.memory.temporal, dict) else {}
+    valid_time = temporal.get("valid_time") if isinstance(temporal.get("valid_time"), dict) else {}
+    event_time = temporal.get("event_time") if isinstance(temporal.get("event_time"), dict) else {}
+    mentioned_at = temporal.get("mentioned_at") if isinstance(temporal.get("mentioned_at"), dict) else {}
+    return {
+        "memory_id": result.memory.id,
+        "content": result.memory.content,
+        "event_time": event_time,
+        "valid_time": valid_time,
+        "mentioned_at": mentioned_at,
+        "status": valid_time.get("status", "unknown"),
+        "source_turn_ids": result.memory.source_turn_ids,
+        "combined_score": result.combined_score,
+    }
 
 
 class CognitiveEngine:
@@ -379,13 +481,46 @@ class CognitiveEngine:
         """Check if a plan/transient_state memory has expired."""
         if memory.memory_type not in _EXPIRABLE_TYPES:
             return False
-        if memory.valid_until is not None and now > memory.valid_until:
+        if memory.valid_until is not None and _compare_datetimes(now, memory.valid_until) > 0:
             return True
         if memory.ttl_seconds is not None and memory.created_at is not None:
             expiry = memory.created_at + timedelta(seconds=memory.ttl_seconds)
-            if now > expiry:
+            if _compare_datetimes(now, expiry) > 0:
                 return True
         return False
+
+    def _temporal_score_boost(self, memory: Memory, query_text: str) -> float:
+        """Small additive score for temporal metadata fit in the experiment path."""
+        if not isinstance(memory.temporal, dict):
+            return 0.0
+
+        boost = 0.0
+        q = query_text.lower()
+        valid_time = memory.temporal.get("valid_time")
+        status = ""
+        if isinstance(valid_time, dict):
+            status = str(valid_time.get("status", "")).lower()
+
+        if any(token in q for token in ("current", "currently", "now", "still")):
+            if status in {"current", "in_progress", "planned"} and not memory.is_superseded:
+                boost += self.config.temporal_validity_match_boost
+            if status in {"superseded", "cancelled"}:
+                boost -= self.config.temporal_validity_match_boost
+
+        event_time = memory.temporal.get("event_time")
+        if isinstance(event_time, dict):
+            confidence = event_time.get("confidence", 0)
+            try:
+                boost += min(0.05, max(0.0, float(confidence)) * 0.05)
+            except (TypeError, ValueError):
+                pass
+
+        raw_expressions = memory.temporal.get("raw_time_expressions", [])
+        if isinstance(raw_expressions, list) and raw_expressions:
+            if any(token in q for token in ("when", "date", "day", "month", "year", "before", "after")):
+                boost += self.config.temporal_time_expression_boost
+
+        return boost
 
     # ------------------------------------------------------------------
     # Full retrieval pipeline
@@ -416,11 +551,17 @@ class CognitiveEngine:
         """
         search_trace = SearchTrace() if trace else None
         t_total = _time.monotonic() if trace else 0.0
+        temporal_query = (
+            self.config.temporal_query_mode == "auto"
+            and _is_temporal_query(query_text)
+        )
         candidate_limit = (
             max(top_k * self.config.rerank_factor, self.config.k_rerank)
             if self.config.rerank_enabled
             else top_k * 3
         )
+        if temporal_query:
+            candidate_limit = max(candidate_limit, self.config.temporal_candidate_k)
 
         # Step 1: Similarity search in hot store
         t0 = _time.monotonic() if trace else 0.0
@@ -472,7 +613,11 @@ class CognitiveEngine:
 
         # Step 2: Score candidates
         t0 = _time.monotonic() if trace else 0.0
-        alpha = self.config.retrieval_score_exponent
+        alpha = (
+            self.config.temporal_decay_alpha
+            if temporal_query
+            else self.config.retrieval_score_exponent
+        )
         scored: list[SearchResult] = []
         for mem, relevance in candidates:
             retention = self.compute_retention(mem, now)
@@ -481,6 +626,9 @@ class CognitiveEngine:
             # Deep recall penalty for superseded memories
             if mem.is_superseded and deep_recall:
                 combined *= self.config.deep_recall_penalty
+
+            if temporal_query:
+                combined += self._temporal_score_boost(mem, query_text or "")
 
             scored.append(SearchResult(
                 memory=mem,
@@ -650,6 +798,18 @@ class CognitiveEngine:
 
         final = all_results[:top_k]
 
+        temporal_evidence: list[dict] = []
+        if temporal_query:
+            order_mode = _temporal_order_mode(query_text)
+            if order_mode == "chronological":
+                final.sort(key=_temporal_sort_key)
+            elif order_mode == "reverse_chronological":
+                final.sort(key=_temporal_sort_key, reverse=True)
+            temporal_evidence = [
+                _temporal_evidence_item(result)
+                for result in final[: self.config.temporal_final_k]
+            ]
+
         # Attach evidence chains to top result
         if evidence_chains and final:
             final[0].evidence_chains = evidence_chains
@@ -660,6 +820,7 @@ class CognitiveEngine:
         return SearchResponse(
             results=final,
             evidence_chains=evidence_chains,
+            temporal_evidence=temporal_evidence,
             trace=search_trace,
         )
 
