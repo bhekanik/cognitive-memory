@@ -14,8 +14,8 @@ Memory that behaves like memory. Important things stick, irrelevant things fade,
 
 | Benchmark | Result | Comparison |
 | --- | --- | --- |
-| **LoCoMo** (10 conv, 1540 QA) | 44.8% overall F1 · 48.5% multi-hop F1 | 1.7× Mem0's 28.4% multi-hop · 70% of LoCoMo oracle ceiling (63.9%) |
-| **LongMemEval-S** (500 Q) | 70.2% task-averaged accuracy | Near ENGRAM 71.4% · +14pp over full-context 56.2% |
+| **LoCoMo** (10 conv, 1540 QA) | 44.8% overall F1 · 48.5% multi-hop F1 | 1.7× Mem0's 28.4% multi-hop · 70% of LoCoMo oracle evidence context condition (63.9%) |
+| **LongMemEval-S** (500 Q) | 71.6% task-averaged accuracy · 72.6% overall accuracy | Competitive with ENGRAM 71.4% · +15.4pp over full-context 56.2% |
 | **LTI-Bench** (controlled, 42 probes) | 88.1% accuracy · 100% critical-fact retention | FadeMem 82.1% critical retention |
 
 Methodology, parameters, and per-category breakdowns live in the [benchmark repo](https://github.com/planetaryescape/cognitive-memory-benchmarks).
@@ -128,7 +128,7 @@ const mem = new CognitiveMemory({
 
 ## Docs
 
-Full documentation, guides, concepts, benchmarks, and API reference at **[bhekanik.github.io/cognitive-memory](https://bhekanik.github.io/cognitive-memory)**.
+Full documentation, guides, concepts, benchmarks, and API reference at **[planetaryescape.github.io/cognitive-memory](https://planetaryescape.github.io/cognitive-memory)**.
 
 Migration: [Python 0.3.0 → 0.4.0](./sdks/python/MIGRATION.md) · [TypeScript 0.3.0 → 0.4.0](./sdks/typescript/MIGRATION.md).
 

@@ -99,7 +99,7 @@ See [`MIGRATION.md`](./MIGRATION.md) for the 0.3.0 → 0.4.0 behavioural changes
 
 ## Docs
 
-Full documentation, guides, concepts, and API reference: **[bhekanik.github.io/cognitive-memory](https://bhekanik.github.io/cognitive-memory)**.
+Full documentation, guides, concepts, and API reference: **[planetaryescape.github.io/cognitive-memory](https://planetaryescape.github.io/cognitive-memory)**.
 
 ## License
 
