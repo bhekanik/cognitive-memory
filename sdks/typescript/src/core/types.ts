@@ -20,6 +20,50 @@ export type MemoryCategory = "episodic" | "semantic" | "procedural" | "core";
  */
 export type SemanticType = "fact" | "preference" | "plan" | "transient_state" | "other";
 
+export type TemporalStatus =
+  | "planned"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "hypothetical"
+  | "current"
+  | "superseded"
+  | "unknown";
+
+export interface TemporalMetadata {
+  mentionedAt?: {
+    sessionId?: string;
+    timestamp?: string;
+  };
+  eventTime?: {
+    start?: string | null;
+    end?: string | null;
+    granularity?: "turn" | "day" | "week" | "month" | "year" | "unknown";
+    rawExpression?: string | null;
+    confidence?: number;
+  };
+  validTime?: {
+    validFrom?: string | null;
+    validTo?: string | null;
+    status?: TemporalStatus;
+  };
+  rawTimeExpressions?: string[];
+  relations?: Array<{
+    type: "before" | "after" | "during" | "overlaps" | "causes" | "updates" | "supersedes";
+    targetMemoryId: string;
+    confidence: number;
+  }>;
+}
+
+export interface EventFrame {
+  eventType?: "state" | "event" | "plan" | "preference" | "update" | "relationship" | "achievement" | "other";
+  subjects?: string[];
+  action?: string;
+  objects?: string[];
+  location?: string;
+  status?: TemporalStatus;
+}
+
 /**
  * Bidirectional association between two memories
  */
@@ -114,6 +158,12 @@ export interface Memory {
 
   /** Turn IDs this memory was extracted from (for retrieval diagnostics) */
   sourceTurnIds?: string[];
+
+  /** Experimental temporal metadata; default-off retrieval path consumes it */
+  temporal?: TemporalMetadata;
+
+  /** Experimental event frame extracted from memory content */
+  eventFrame?: EventFrame;
 }
 
 /**
@@ -146,6 +196,12 @@ export interface MemoryInput {
 
   /** Time-to-live in seconds */
   ttlSeconds?: number | null;
+
+  /** Experimental temporal metadata */
+  temporal?: TemporalMetadata;
+
+  /** Experimental event frame */
+  eventFrame?: EventFrame;
 }
 
 /**
@@ -218,6 +274,17 @@ export interface SearchResponse {
   results: SearchResult[];
   evidenceChains: string[][];
   trace?: SearchTrace;
+
+  /** Chronological evidence block populated only for temporal query mode */
+  temporalEvidence?: Array<{
+    memoryId: string;
+    content: string;
+    eventTime?: TemporalMetadata["eventTime"];
+    validTime?: TemporalMetadata["validTime"];
+    mentionedAt?: TemporalMetadata["mentionedAt"];
+    sourceTurnIds?: string[];
+    combinedScore: number;
+  }>;
 }
 
 /**
@@ -429,6 +496,29 @@ export interface CognitiveMemoryConfig {
   /** Include expired memories when deep_recall is enabled (default: true) */
   includeExpiredInDeepRecall?: boolean;
 
+  // -- Temporal reconstruction experiment (default-off) --
+
+  /** Enable temporal query routing: "off" (default) or "auto" */
+  temporalQueryMode?: "off" | "auto";
+
+  /** Candidate pool floor for temporal queries */
+  temporalCandidateK?: number;
+
+  /** Max chronological evidence items returned for temporal queries */
+  temporalFinalK?: number;
+
+  /** Retention exponent used in temporal retrieval */
+  temporalDecayAlpha?: number;
+
+  /** Boost reserved for anchor-neighbor temporal evidence */
+  temporalAnchorNeighborBoost?: number;
+
+  /** Boost for current/as-of validity matches */
+  temporalValidityMatchBoost?: number;
+
+  /** Boost for memories carrying explicit time expressions */
+  temporalTimeExpressionBoost?: number;
+
   // -- LLM rerank (v6) --
 
   /** Enable LLM reranking of top candidates (default: false) */
@@ -528,6 +618,14 @@ export interface ResolvedCognitiveMemoryConfig {
   filterExpiredTransients: boolean;
   includeExpiredInDeepRecall: boolean;
 
+  temporalQueryMode: "off" | "auto";
+  temporalCandidateK: number;
+  temporalFinalK: number;
+  temporalDecayAlpha: number;
+  temporalAnchorNeighborBoost: number;
+  temporalValidityMatchBoost: number;
+  temporalTimeExpressionBoost: number;
+
   rerankEnabled: boolean;
   kRerank: number;
   rerankFactor: number;
@@ -609,6 +707,14 @@ export const DEFAULT_CONFIG: Omit<ResolvedCognitiveMemoryConfig, "userId"> = {
   filterExpiredTransients: true,
   includeExpiredInDeepRecall: true,
 
+  temporalQueryMode: "off",
+  temporalCandidateK: 80,
+  temporalFinalK: 20,
+  temporalDecayAlpha: 0.25,
+  temporalAnchorNeighborBoost: 0.30,
+  temporalValidityMatchBoost: 0.35,
+  temporalTimeExpressionBoost: 0.15,
+
   rerankEnabled: false,
   kRerank: 10,
   rerankFactor: 1,
@@ -669,6 +775,13 @@ export function resolveConfig(
     kSparse: config.kSparse ?? DEFAULT_CONFIG.kSparse,
     filterExpiredTransients: config.filterExpiredTransients ?? DEFAULT_CONFIG.filterExpiredTransients,
     includeExpiredInDeepRecall: config.includeExpiredInDeepRecall ?? DEFAULT_CONFIG.includeExpiredInDeepRecall,
+    temporalQueryMode: config.temporalQueryMode ?? DEFAULT_CONFIG.temporalQueryMode,
+    temporalCandidateK: config.temporalCandidateK ?? DEFAULT_CONFIG.temporalCandidateK,
+    temporalFinalK: config.temporalFinalK ?? DEFAULT_CONFIG.temporalFinalK,
+    temporalDecayAlpha: config.temporalDecayAlpha ?? DEFAULT_CONFIG.temporalDecayAlpha,
+    temporalAnchorNeighborBoost: config.temporalAnchorNeighborBoost ?? DEFAULT_CONFIG.temporalAnchorNeighborBoost,
+    temporalValidityMatchBoost: config.temporalValidityMatchBoost ?? DEFAULT_CONFIG.temporalValidityMatchBoost,
+    temporalTimeExpressionBoost: config.temporalTimeExpressionBoost ?? DEFAULT_CONFIG.temporalTimeExpressionBoost,
     rerankEnabled: config.rerankEnabled ?? DEFAULT_CONFIG.rerankEnabled,
     kRerank: config.kRerank ?? DEFAULT_CONFIG.kRerank,
     rerankFactor: config.rerankFactor ?? DEFAULT_CONFIG.rerankFactor,
@@ -731,6 +844,8 @@ export function createDefaultMemory(
     validUntil: null,
     ttlSeconds: null,
     sourceTurnIds: [],
+    temporal: undefined,
+    eventFrame: undefined,
     ...partial,
   };
 }

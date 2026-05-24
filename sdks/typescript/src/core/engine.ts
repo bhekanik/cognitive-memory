@@ -32,6 +32,22 @@ import { getRetentionFloor } from "./types";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const EXPIRABLE_TYPES: Set<string> = new Set(["plan", "transient_state"]);
+const TEMPORAL_QUERY_PATTERNS = [
+  "when ",
+  "what happened before",
+  "what happened after",
+  "before ",
+  "after ",
+  "first ",
+  "last ",
+  "how long",
+  "current",
+  "currently",
+  "now",
+  "still",
+  "changed",
+  "previous",
+];
 
 type SearchOptions = {
   userId?: string;
@@ -39,6 +55,43 @@ type SearchOptions = {
   minRetention?: number;
   includeAssociations?: boolean;
 };
+
+function isTemporalQuery(queryText?: string): boolean {
+  if (!queryText) return false;
+  const q = ` ${queryText.toLowerCase().trim()} `;
+  return TEMPORAL_QUERY_PATTERNS.some((pattern) => q.includes(pattern));
+}
+
+function temporalOrderMode(queryText?: string): "score" | "chronological" | "reverse_chronological" {
+  if (!queryText) return "score";
+  const q = ` ${queryText.toLowerCase().trim()} `;
+  if (["current", "currently", "now", "still"].some((token) => q.includes(token))) {
+    return "score";
+  }
+  if ([" last ", "latest", "most recent"].some((token) => q.includes(token))) {
+    return "reverse_chronological";
+  }
+  return "chronological";
+}
+
+function parseTemporalTime(value?: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function memoryEventTime(memory: Memory): number {
+  const eventStart = parseTemporalTime(memory.temporal?.eventTime?.start);
+  if (eventStart != null) return eventStart;
+  if (memory.validFrom != null) return memory.validFrom;
+  const mentioned = parseTemporalTime(memory.temporal?.mentionedAt?.timestamp);
+  if (mentioned != null) return mentioned;
+  return memory.createdAt ?? Number.POSITIVE_INFINITY;
+}
+
+function temporalSortKey(result: SearchResult): [number, string] {
+  return [memoryEventTime(result.memory), result.memory.id];
+}
 
 /**
  * The computational core. Operates on a MemoryAdapter and applies
@@ -338,6 +391,36 @@ export class CognitiveEngine {
     return false;
   }
 
+  private temporalScoreBoost(memory: Memory, queryText: string): number {
+    if (!memory.temporal) return 0;
+    let boost = 0;
+    const q = queryText.toLowerCase();
+    const status = memory.temporal.validTime?.status ?? "unknown";
+
+    if (["current", "currently", "now", "still"].some((token) => q.includes(token))) {
+      if (["current", "in_progress", "planned"].includes(status) && !memory.isSuperseded) {
+        boost += this.config.temporalValidityMatchBoost;
+      }
+      if (["superseded", "cancelled"].includes(status)) {
+        boost -= this.config.temporalValidityMatchBoost;
+      }
+    }
+
+    const confidence = memory.temporal.eventTime?.confidence;
+    if (typeof confidence === "number") {
+      boost += Math.min(0.05, Math.max(0, confidence) * 0.05);
+    }
+
+    if (
+      memory.temporal.rawTimeExpressions?.length &&
+      ["when", "date", "day", "month", "year", "before", "after"].some((token) => q.includes(token))
+    ) {
+      boost += this.config.temporalTimeExpressionBoost;
+    }
+
+    return boost;
+  }
+
   // ------------------------------------------------------------------
   // Full retrieval pipeline
   // ------------------------------------------------------------------
@@ -353,7 +436,11 @@ export class CognitiveEngine {
     llm?: LLMProvider,
     options: SearchOptions = {},
   ): Promise<SearchResponse> {
-    const alpha = this.config.retrievalScoreExponent;
+    const temporalQuery =
+      this.config.temporalQueryMode === "auto" && isTemporalQuery(queryText);
+    const alpha = temporalQuery
+      ? this.config.temporalDecayAlpha
+      : this.config.retrievalScoreExponent;
     const searchTrace: SearchTrace | undefined = trace
       ? { totalWallMs: 0, totalTokens: 0, stages: {} }
       : undefined;
@@ -361,6 +448,9 @@ export class CognitiveEngine {
     const candidateLimit = this.config.rerankEnabled
       ? Math.max(topK * this.config.rerankFactor, this.config.kRerank)
       : topK * 3;
+    const effectiveCandidateLimit = temporalQuery
+      ? Math.max(candidateLimit, this.config.temporalCandidateK)
+      : candidateLimit;
 
     // Step 1: Similarity search in hot store
     let t0 = trace ? performance.now() : 0;
@@ -368,7 +458,7 @@ export class CognitiveEngine {
       userId: options.userId,
       categories: options.categories,
       minRetention: options.minRetention,
-      limit: candidateLimit,
+      limit: effectiveCandidateLimit,
       includeCold: deepRecall,
       includeSuperseded: deepRecall,
       includeStubs: false,
@@ -422,6 +512,9 @@ export class CognitiveEngine {
       if (mem.isSuperseded && deepRecall) {
         combined *= this.config.deepRecallPenalty;
       }
+      if (temporalQuery) {
+        combined += this.temporalScoreBoost(mem, queryText ?? "");
+      }
 
       scored.push({
         memory: mem,
@@ -466,7 +559,7 @@ export class CognitiveEngine {
     let usedRerank = false;
     if (this.config.rerankEnabled && llm && queryText && scored.length > 1) {
       t0 = trace ? performance.now() : 0;
-      const kRerank = Math.min(candidateLimit, scored.length);
+      const kRerank = Math.min(effectiveCandidateLimit, scored.length);
       const toRerank = scored.slice(0, kRerank);
 
       const { rerankedIndices, usage } = await rerankCandidates(
@@ -626,6 +719,27 @@ export class CognitiveEngine {
     }
 
     const final = allResults.slice(0, topK);
+    let temporalEvidence: SearchResponse["temporalEvidence"] = [];
+    if (temporalQuery) {
+      const orderMode = temporalOrderMode(queryText);
+      if (orderMode !== "score") {
+        final.sort((a, b) => {
+          const [timeA, idA] = temporalSortKey(a);
+          const [timeB, idB] = temporalSortKey(b);
+          const comparison = timeA === timeB ? idA.localeCompare(idB) : timeA - timeB;
+          return orderMode === "reverse_chronological" ? -comparison : comparison;
+        });
+      }
+      temporalEvidence = final.slice(0, this.config.temporalFinalK).map((result) => ({
+        memoryId: result.memory.id,
+        content: result.memory.content,
+        eventTime: result.memory.temporal?.eventTime,
+        validTime: result.memory.temporal?.validTime,
+        mentionedAt: result.memory.temporal?.mentionedAt,
+        sourceTurnIds: result.memory.sourceTurnIds,
+        combinedScore: result.combinedScore,
+      }));
+    }
     if (evidenceChains.length > 0 && final.length > 0) {
       final[0].evidenceChains = evidenceChains;
     }
@@ -637,6 +751,7 @@ export class CognitiveEngine {
     return {
       results: final,
       evidenceChains,
+      temporalEvidence,
       trace: searchTrace,
     };
   }

@@ -39,6 +39,29 @@ const SYNAPTIC_TAGGING_THRESHOLD = 0.4;
 const STABILITY_REINFORCEMENT_THRESHOLD = 0.75;
 const INGESTION_MAINTENANCE_INTERVAL = 5;
 
+function closeValidityWindow(oldMemory: Memory, newMemory: Memory, now: number, relationType: "updates" | "supersedes"): void {
+  const boundary = newMemory.validFrom ?? newMemory.createdAt ?? now;
+  oldMemory.validUntil = boundary;
+  oldMemory.temporal ??= {};
+  oldMemory.temporal.validTime ??= {};
+  oldMemory.temporal.validTime.validTo = new Date(boundary).toISOString();
+  oldMemory.temporal.validTime.status = "superseded";
+  oldMemory.temporal.relations ??= [];
+  oldMemory.temporal.relations.push({
+    type: relationType,
+    targetMemoryId: newMemory.id,
+    confidence: 0.8,
+  });
+
+  newMemory.validFrom ??= boundary;
+  newMemory.temporal ??= {};
+  newMemory.temporal.validTime ??= {};
+  newMemory.temporal.validTime.validFrom ??= new Date(boundary).toISOString();
+  if (!newMemory.temporal.validTime.status || newMemory.temporal.validTime.status === "unknown") {
+    newMemory.temporal.validTime.status = "current";
+  }
+}
+
 /**
  * Main cognitive memory system
  *
@@ -112,6 +135,8 @@ export class CognitiveMemory {
       validUntil: input.validUntil ?? null,
       ttlSeconds: input.ttlSeconds ?? null,
       sourceTurnIds: [],
+      temporal: input.temporal,
+      eventFrame: input.eventFrame,
     };
 
     return this.adapter.createMemory(memory);
@@ -486,10 +511,13 @@ export class CognitiveMemory {
           existingMem.importance,
           newMem.importance,
         );
+        closeValidityWindow(existingMem, newMem, Date.now(), "updates");
 
         await this.adapter.updateMemory(existingId, {
           contradictedBy: newId,
           category: wasCore ? "semantic" : existingMem.category,
+          validUntil: existingMem.validUntil,
+          temporal: existingMem.temporal,
         });
 
         await this.adapter.updateMemory(newId, {
@@ -498,6 +526,8 @@ export class CognitiveMemory {
             conflict === "CONTRADICTION" && wasCore
               ? "core"
               : newMem.category,
+          validFrom: newMem.validFrom,
+          temporal: newMem.temporal,
         });
         resolved++;
       }
@@ -716,6 +746,8 @@ export class CognitiveMemory {
             validUntil: input.validUntil ?? null,
             ttlSeconds: input.ttlSeconds ?? null,
             sourceTurnIds: [],
+            temporal: input.temporal,
+            eventFrame: input.eventFrame,
           } as Omit<Memory, "id" | "createdAt" | "updatedAt">;
         }),
       );

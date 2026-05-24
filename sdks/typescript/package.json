@@ -65,6 +65,9 @@
       "optional": true
     }
   },
+  "dependencies": {
+    "chrono-node": "^2.9.1"
+  },
   "devDependencies": {
     "@types/node": "^22.19.0",
     "@types/pg": "^8.15.5",

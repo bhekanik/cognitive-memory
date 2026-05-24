@@ -118,6 +118,8 @@ export class ConvexAdapter extends MemoryAdapter {
       validUntil: memory.validUntil,
       ttlSeconds: memory.ttlSeconds,
       sourceTurnIds: memory.sourceTurnIds,
+      temporal: memory.temporal,
+      eventFrame: memory.eventFrame,
     });
 
     return id;
@@ -190,6 +192,8 @@ export class ConvexAdapter extends MemoryAdapter {
     if (updates.ttlSeconds !== undefined) payload.ttlSeconds = updates.ttlSeconds;
     if (updates.sourceTurnIds !== undefined)
       payload.sourceTurnIds = updates.sourceTurnIds;
+    if (updates.temporal !== undefined) payload.temporal = updates.temporal;
+    if (updates.eventFrame !== undefined) payload.eventFrame = updates.eventFrame;
     if (updates.createdAt !== undefined) payload.createdAt = updates.createdAt;
     if (updates.updatedAt !== undefined) payload.updatedAt = updates.updatedAt;
 
@@ -492,6 +496,8 @@ export class ConvexAdapter extends MemoryAdapter {
       validUntil: typeof raw.validUntil === "number" ? raw.validUntil : null,
       ttlSeconds: typeof raw.ttlSeconds === "number" ? raw.ttlSeconds : null,
       sourceTurnIds: Array.isArray(raw.sourceTurnIds) ? raw.sourceTurnIds.filter((s: unknown) => typeof s === "string") : [],
+      temporal: isRecord(raw.temporal) ? raw.temporal as Memory["temporal"] : undefined,
+      eventFrame: isRecord(raw.eventFrame) ? raw.eventFrame as Memory["eventFrame"] : undefined,
       sessionIds: Array.isArray(raw.sessionIds) ? raw.sessionIds.filter((s: unknown) => typeof s === "string") : [],
       associations: isRecord(raw.associations) ? raw.associations as Memory["associations"] : {},
     });

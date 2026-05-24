@@ -108,6 +108,8 @@ export function postgresSchemaSql(options?: {
     `  valid_until bigint,`,
     `  ttl_seconds integer,`,
     `  source_turn_ids text[] NOT NULL DEFAULT '{}',`,
+    `  temporal jsonb,`,
+    `  event_frame jsonb,`,
     `  created_at bigint NOT NULL,`,
     `  updated_at bigint NOT NULL`,
     `);`,
@@ -195,9 +197,9 @@ export class PostgresAdapter extends MemoryAdapter {
 
     await this.db.query(
       `INSERT INTO ${this.mem} (
-        id, user_id, content, embedding, category, importance, stability, access_count, last_accessed, retention, metadata, is_cold, cold_since, days_at_floor, is_superseded, superseded_by, is_stub, contradicted_by, semantic_type, valid_from, valid_until, ttl_seconds, source_turn_ids, created_at, updated_at
+        id, user_id, content, embedding, category, importance, stability, access_count, last_accessed, retention, metadata, is_cold, cold_since, days_at_floor, is_superseded, superseded_by, is_stub, contradicted_by, semantic_type, valid_from, valid_until, ttl_seconds, source_turn_ids, temporal, event_frame, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23::text[], $24, $25
+        $1, $2, $3, $4::vector, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23::text[], $24::jsonb, $25::jsonb, $26, $27
       )`,
       [
         id,
@@ -223,6 +225,8 @@ export class PostgresAdapter extends MemoryAdapter {
         memory.validUntil ?? null,
         memory.ttlSeconds ?? null,
         memory.sourceTurnIds ?? [],
+        memory.temporal ? JSON.stringify(memory.temporal) : null,
+        memory.eventFrame ? JSON.stringify(memory.eventFrame) : null,
         now,
         now,
       ],
@@ -321,6 +325,10 @@ export class PostgresAdapter extends MemoryAdapter {
     if (updates.ttlSeconds !== undefined) add("ttl_seconds", updates.ttlSeconds);
     if (updates.sourceTurnIds !== undefined)
       add("source_turn_ids", updates.sourceTurnIds, "::text[]");
+    if (updates.temporal !== undefined)
+      add("temporal", JSON.stringify(updates.temporal), "::jsonb");
+    if (updates.eventFrame !== undefined)
+      add("event_frame", JSON.stringify(updates.eventFrame), "::jsonb");
     if (updates.createdAt !== undefined) add("created_at", updates.createdAt);
     if (updates.updatedAt !== undefined) add("updated_at", updates.updatedAt);
 
@@ -737,6 +745,8 @@ export class PostgresAdapter extends MemoryAdapter {
       validUntil: toNumber(row.valid_until),
       ttlSeconds: toNumber(row.ttl_seconds),
       sourceTurnIds: Array.isArray(row.source_turn_ids) ? row.source_turn_ids.filter((s: unknown) => typeof s === "string") : [],
+      temporal: row.temporal && typeof row.temporal === "object" ? row.temporal as Memory["temporal"] : undefined,
+      eventFrame: row.event_frame && typeof row.event_frame === "object" ? row.event_frame as Memory["eventFrame"] : undefined,
     });
   }
 }

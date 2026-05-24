@@ -9,7 +9,16 @@
  * 5. Compress memory groups during consolidation
  */
 
-import type { Memory, MemoryCategory, ResolvedCognitiveMemoryConfig, SemanticType } from "./types";
+import * as chrono from "chrono-node";
+import type {
+  EventFrame,
+  Memory,
+  MemoryCategory,
+  ResolvedCognitiveMemoryConfig,
+  SemanticType,
+  TemporalMetadata,
+  TemporalStatus,
+} from "./types";
 import { createDefaultMemory } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +79,11 @@ For each memory, provide:
 - valid_from: (optional) ISO date string when this becomes valid. Only for time-bounded memories.
 - valid_until: (optional) ISO date string when this expires. Use for plans and transient states.
 - source_turn_ids: (optional) array of turn numbers this was extracted from (e.g. [1, 3])
+- event_time: (optional) object with start/end ISO strings, raw_expression, granularity, confidence.
+- valid_time: (optional) object with valid_from/valid_to ISO strings and status.
+- status: (optional) "planned" | "in_progress" | "completed" | "cancelled" | "hypothetical" | "current" | "superseded" | "unknown".
+- event_frame: (optional) object with event_type, subjects, action, objects, location.
+- raw_time_expressions: (optional) array of original time phrases from the text.
 
 CRITICAL RULES:
 1. NARRATE, don't interpret. Store WHAT HAPPENED, not what it means.
@@ -88,7 +102,7 @@ Conversation:
 {conversation}
 
 Respond with a JSON array only. No markdown, no preamble.
-Example: [{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact"}, {"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference"}, {"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "valid_until": "2024-03-15T23:59:59"}, {"content": "Alex is currently feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state"}, {"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact"}]`;
+Example: [{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact", "valid_time": {"status": "current"}}, {"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference", "valid_time": {"status": "current"}}, {"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "event_time": {"start": "2024-03-15T00:00:00", "raw_expression": "March 15, 2024", "granularity": "day", "confidence": 0.9}, "valid_until": "2024-03-15T23:59:59", "status": "planned", "event_frame": {"event_type": "plan", "subjects": ["Alex"], "action": "attend", "objects": ["dentist appointment"]}}, {"content": "Alex is currently feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state", "valid_time": {"status": "current"}}, {"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact", "event_time": {"start": "2024-03-03T00:00:00", "raw_expression": "the weekend before March 10, 2024", "granularity": "week", "confidence": 0.7}, "status": "completed"}]`;
 
 export const CONFLICT_PROMPT = `Does the new memory contradict or update an existing memory?
 
@@ -136,7 +150,7 @@ function baseMemoryFields(
   config: ResolvedCognitiveMemoryConfig,
   sessionId: string,
   now: number,
-): Omit<MemoryWithoutIds, "content" | "category" | "importance" | "stability" | "semanticType" | "validFrom" | "validUntil" | "ttlSeconds" | "sourceTurnIds"> {
+): Omit<MemoryWithoutIds, "content" | "category" | "importance" | "stability" | "semanticType" | "validFrom" | "validUntil" | "ttlSeconds" | "sourceTurnIds" | "temporal" | "eventFrame"> {
   return {
     userId: config.userId,
     accessCount: 0,
@@ -162,6 +176,92 @@ function parseOptionalTimestamp(value: unknown): number | null {
     return Number.isNaN(parsed) ? null : parsed;
   }
   return null;
+}
+
+function toIso(value: number | null): string | null {
+  return value == null ? null : new Date(value).toISOString();
+}
+
+function resolveRelativeTimestamp(raw: string, reference: number): number | null {
+  const parsed = chrono.parseDate(raw, new Date(reference), { forwardDate: false });
+  return parsed ? parsed.getTime() : parseOptionalTimestamp(raw);
+}
+
+function normaliseEventTime(value: unknown, reference: number): TemporalMetadata["eventTime"] | undefined {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const row = value as Record<string, unknown>;
+    const raw = typeof row.raw_expression === "string" ? row.raw_expression : typeof row.raw === "string" ? row.raw : null;
+    const start = parseOptionalTimestamp(row.start) ?? (raw ? resolveRelativeTimestamp(raw, reference) : null);
+    const end = parseOptionalTimestamp(row.end);
+    return {
+      start: toIso(start),
+      end: toIso(end),
+      granularity: typeof row.granularity === "string"
+        ? row.granularity as "turn" | "day" | "week" | "month" | "year" | "unknown"
+        : "unknown",
+      rawExpression: raw,
+      confidence: typeof row.confidence === "number" ? row.confidence : 0.6,
+    };
+  }
+  if (typeof value === "string") {
+    const start = resolveRelativeTimestamp(value, reference);
+    return {
+      start: toIso(start),
+      end: null,
+      granularity: "unknown",
+      rawExpression: value,
+      confidence: start == null ? 0 : 0.5,
+    };
+  }
+  return undefined;
+}
+
+function normaliseTemporalMetadata(
+  item: Record<string, unknown>,
+  sessionId: string,
+  now: number,
+  validFrom: number | null,
+  validUntil: number | null,
+): TemporalMetadata {
+  const validTime = item.valid_time && typeof item.valid_time === "object"
+    ? item.valid_time as Record<string, unknown>
+    : {};
+  const status = typeof item.status === "string"
+    ? item.status as TemporalStatus
+    : typeof validTime.status === "string"
+      ? validTime.status as TemporalStatus
+      : "unknown";
+  const raw = Array.isArray(item.raw_time_expressions)
+    ? item.raw_time_expressions.map(String)
+    : [];
+
+  return {
+    mentionedAt: {
+      sessionId,
+      timestamp: new Date(now).toISOString(),
+    },
+    eventTime: normaliseEventTime(item.event_time, now),
+    validTime: {
+      validFrom: toIso(validFrom) ?? (typeof validTime.valid_from === "string" ? validTime.valid_from : null),
+      validTo: toIso(validUntil) ?? (typeof validTime.valid_to === "string" ? validTime.valid_to : null),
+      status,
+    },
+    rawTimeExpressions: raw,
+    relations: [],
+  };
+}
+
+function normaliseEventFrame(value: unknown): EventFrame | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  return {
+    eventType: typeof row.event_type === "string" ? row.event_type as EventFrame["eventType"] : undefined,
+    subjects: Array.isArray(row.subjects) ? row.subjects.map(String) : undefined,
+    action: typeof row.action === "string" ? row.action : undefined,
+    objects: Array.isArray(row.objects) ? row.objects.map(String) : undefined,
+    location: typeof row.location === "string" ? row.location : undefined,
+    status: typeof row.status === "string" ? row.status as TemporalStatus : undefined,
+  };
 }
 
 export async function extractFromConversation(
@@ -244,6 +344,14 @@ function buildMemories(
       validUntil: parseOptionalTimestamp(item.valid_until),
       ttlSeconds: typeof item.ttl_seconds === "number" ? Math.floor(item.ttl_seconds) : null,
       sourceTurnIds,
+      temporal: normaliseTemporalMetadata(
+        item,
+        sessionId,
+        now,
+        parseOptionalTimestamp(item.valid_from),
+        parseOptionalTimestamp(item.valid_until),
+      ),
+      eventFrame: normaliseEventFrame(item.event_frame),
     });
   }
 
@@ -279,6 +387,15 @@ export function extractRawTurns(
       validUntil: null,
       ttlSeconds: null,
       sourceTurnIds: [],
+      temporal: {
+        mentionedAt: {
+          sessionId,
+          timestamp: new Date(now).toISOString(),
+        },
+        validTime: { status: "unknown" },
+        rawTimeExpressions: [],
+        relations: [],
+      },
     });
   }
 
