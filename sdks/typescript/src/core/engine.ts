@@ -32,22 +32,38 @@ import { getRetentionFloor } from "./types";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const EXPIRABLE_TYPES: Set<string> = new Set(["plan", "transient_state"]);
-const TEMPORAL_QUERY_PATTERNS = [
+// A query is temporal only when it ASKS FOR a time, a duration, or the current
+// state — not when a temporal word merely appears in a subordinate clause of a
+// what/how/who/where question. Precision matters: chronologically reordering a
+// non-temporal question demotes the relevant memory out of top-k (Phase 14
+// dev-slice audit, 2026-05-24). Mirrors the Python `_is_temporal_query`.
+const TEMPORAL_HEAD_PATTERNS = [
   "when ",
+  "when did",
+  "when is",
+  "when was",
+  "when will",
+  "when does",
+  "when are",
+  "since when",
+  "until when",
+  "for how long",
+  "how long",
+  "how often",
+  "how old",
+  "what year",
+  "what date",
+  "what day",
+  "what time",
+  "what month",
+];
+const TEMPORAL_SEQUENCE_PATTERNS = [
   "what happened before",
   "what happened after",
-  "before ",
-  "after ",
-  "first ",
-  "last ",
-  "how long",
-  "current",
-  "currently",
-  "now",
-  "still",
-  "changed",
-  "previous",
+  "what happened when",
 ];
+// Whole-word current-state markers so "know"/"recurrent" don't fire.
+const TEMPORAL_CURRENT_RE = /\b(?:now|currently|current|still|nowadays)\b/;
 
 type SearchOptions = {
   userId?: string;
@@ -58,8 +74,11 @@ type SearchOptions = {
 
 function isTemporalQuery(queryText?: string): boolean {
   if (!queryText) return false;
-  const q = ` ${queryText.toLowerCase().trim()} `;
-  return TEMPORAL_QUERY_PATTERNS.some((pattern) => q.includes(pattern));
+  const q = queryText.toLowerCase().trim();
+  if (TEMPORAL_HEAD_PATTERNS.some((pattern) => q.startsWith(pattern.trim()))) return true;
+  if (TEMPORAL_SEQUENCE_PATTERNS.some((pattern) => q.includes(pattern))) return true;
+  if (q.includes("these days")) return true;
+  return TEMPORAL_CURRENT_RE.test(q);
 }
 
 function temporalOrderMode(queryText?: string): "score" | "chronological" | "reverse_chronological" {

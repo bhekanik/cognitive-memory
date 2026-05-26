@@ -13,6 +13,7 @@ Implements all mechanisms from the paper:
 from __future__ import annotations
 
 import math
+import re
 import time as _time
 from datetime import datetime, timedelta, timezone
 from itertools import combinations
@@ -32,22 +33,43 @@ from .adapters.base import MemoryAdapter
 from .embeddings import EmbeddingProvider, cosine_similarity
 
 _EXPIRABLE_TYPES = {"plan", "transient_state"}
-_TEMPORAL_QUERY_PATTERNS = (
+
+# A query is temporal only when it ASKS FOR a time, a duration, or the current
+# state — not when a temporal word merely appears in a subordinate clause of a
+# what/how/who/where question. Precision matters: chronologically reordering a
+# non-temporal question demotes the relevant memory out of top-k (Phase 14
+# dev-slice audit, 2026-05-24). The previous substring-anywhere list fired on
+# "...feel WHEN ... AFTER...", "...picture of ... LAST summer", and even "knoW".
+#
+# The question leads with a time/duration interrogative:
+_TEMPORAL_HEAD_PATTERNS = (
     "when ",
+    "when did",
+    "when is",
+    "when was",
+    "when will",
+    "when does",
+    "when are",
+    "since when",
+    "until when",
+    "for how long",
+    "how long",
+    "how often",
+    "how old",
+    "what year",
+    "what date",
+    "what day",
+    "what time",
+    "what month",
+)
+# Event-sequence questions (the answer is an event placed in time):
+_TEMPORAL_SEQUENCE_PATTERNS = (
     "what happened before",
     "what happened after",
-    "before ",
-    "after ",
-    "first ",
-    "last ",
-    "how long",
-    "current",
-    "currently",
-    "now",
-    "still",
-    "changed",
-    "previous",
+    "what happened when",
 )
+# Current-state markers, matched as whole words so "know"/"recurrent" don't fire:
+_TEMPORAL_CURRENT_RE = re.compile(r"\b(?:now|currently|current|still|nowadays)\b")
 
 
 def _compare_datetimes(left: datetime, right: datetime) -> int:
@@ -87,8 +109,14 @@ def _ensure_bidirectional_association(
 def _is_temporal_query(query_text: Optional[str]) -> bool:
     if not query_text:
         return False
-    q = f" {query_text.lower().strip()} "
-    return any(pattern in q for pattern in _TEMPORAL_QUERY_PATTERNS)
+    q = query_text.lower().strip()
+    if any(q.startswith(pattern.strip()) for pattern in _TEMPORAL_HEAD_PATTERNS):
+        return True
+    if any(pattern in q for pattern in _TEMPORAL_SEQUENCE_PATTERNS):
+        return True
+    if "these days" in q:
+        return True
+    return bool(_TEMPORAL_CURRENT_RE.search(q))
 
 
 def _temporal_order_mode(query_text: Optional[str]) -> str:

@@ -138,3 +138,35 @@ def test_current_temporal_query_keeps_current_state_first():
 
     assert result.results[0].memory.content == "Jamie lives in London."
     assert result.temporal_evidence[0]["content"] == "Jamie lives in London."
+
+
+def test_is_temporal_query_precision():
+    from cognitive_memory.engine import _is_temporal_query
+
+    # Asks for a time / duration / current state -> temporal.
+    temporal = [
+        "When did Nate win his first video game tournament?",
+        "When is Joanna going to make ice cream?",
+        "How long has Nate had his turtles?",
+        "For how long has Nate had his turtles?",
+        "How often does Joanna write?",
+        "What year did Joanna graduate?",
+        "Since when has Maria volunteered?",
+        "What happened after Alex injured her ankle?",
+        "Where does Jamie live now?",
+        "What is Maria's current job?",
+        "Does Maria still go to the gym?",
+    ]
+    # Mentions a time word in a subordinate clause but asks what/how/who -> not.
+    non_temporal = [
+        "How did Joanna feel when someone wrote her a letter after reading her blog post?",
+        "What did Joanna take a picture of near Fort Wayne last summer?",
+        "What genre is Joanna's first screenplay?",
+        "Was the first half of September 2022 a good month career-wise for Nate?",
+        "What does Maria know about gardening?",  # 'know' must not match 'now'
+        "What did Joanna just finish last Friday?",
+    ]
+    for q in temporal:
+        assert _is_temporal_query(q), f"should be temporal: {q!r}"
+    for q in non_temporal:
+        assert not _is_temporal_query(q), f"should NOT be temporal: {q!r}"

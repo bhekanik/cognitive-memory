@@ -83,4 +83,27 @@ describe("temporal reconstruction", () => {
     expect(result.results[0].memory.content).toBe("Jamie lives in London.");
     expect(result.temporalEvidence?.[0].content).toBe("Jamie lives in London.");
   });
+
+  it("does not fire temporal routing on a non-temporal question that merely mentions time", async () => {
+    const memory = new CognitiveMemory({
+      adapter: new InMemoryAdapter(),
+      embeddingProvider,
+      userId: "u1",
+      config: { temporalQueryMode: "auto" },
+    });
+
+    await memory.store({
+      content: "Joanna posted a sunset picture taken on a hike.",
+      category: "episodic",
+      temporal: { eventTime: { start: "2024-07-01T00:00:00.000Z", confidence: 0.9 } },
+    });
+
+    // Asks WHAT she photographed; "last summer" is a modifier, not the intent.
+    const result = await memory.search({
+      query: "What did Joanna take a picture of near Fort Wayne last summer?",
+      limit: 5,
+    });
+
+    expect(result.temporalEvidence ?? []).toHaveLength(0);
+  });
 });
