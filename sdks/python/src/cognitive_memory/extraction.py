@@ -168,11 +168,17 @@ For each memory, provide:
 - valid_from: (optional) ISO date string when this becomes valid. Only for time-bounded memories.
 - valid_until: (optional) ISO date string when this expires. Use for plans and transient states.
 - source_turn_ids: (optional) array of turn numbers this was extracted from (e.g. [1, 3])
-- event_time: (optional) object with start/end ISO strings, raw_expression, granularity, confidence.
-- valid_time: (optional) object with valid_from/valid_to ISO strings and status.
-- status: (optional) "planned" | "in_progress" | "completed" | "cancelled" | "hypothetical" | "current" | "superseded" | "unknown".
+- event_time: (optional) object with start/end ISO strings, raw_expression, granularity, confidence. Set when a specific event time is mentioned or resolvable.
+- valid_time: REQUIRED object with at least a status. Pick the best fit — DO NOT default to "unknown":
+  - "current": semantic facts, preferences, identity, ongoing states. The default for lasting memories.
+  - "planned": future intentions, scheduled events.
+  - "in_progress": ongoing activities.
+  - "completed": past one-time events that have finished.
+  - "cancelled": abandoned plans.
+  - "superseded": replaced by a later fact (rarely set at extraction).
+  - "hypothetical": conditional or counterfactual.
 - event_frame: (optional) object with event_type, subjects, action, objects, location.
-- raw_time_expressions: (optional) array of original time phrases from the text.
+- raw_time_expressions: REQUIRED array of every original time phrase tied to this memory. Use [] only when the memory is genuinely timeless. Include all of: explicit dates ("January 21, 2022"), relative phrases ("yesterday", "last Friday", "3 years ago", "recently"), durations ("for 3 years"), and current-state markers ("currently", "still", "now"). For memories anchored to "around the conversation date" without an explicit phrase, include the conversation date.
 
 CRITICAL RULES:
 1. NARRATE, don't interpret. Store WHAT HAPPENED, not what it means.
@@ -186,12 +192,13 @@ CRITICAL RULES:
 5. Extract each distinct fact as a SEPARATE memory. One fact per memory.
 6. If messages are labeled User and Assistant, PRIORITIZE extracting memories from User messages. User messages contain personal information we need to remember. Assistant messages are less important unless they contain facts the user confirmed.
 7. Don't skip brief or passing mentions. If someone mentions a fact once in a single sentence, it's still a memory worth storing. A passing reference to a hometown, a book title, or a pet's name is just as important as a detailed story.
+8. EVERY memory MUST have valid_time.status and raw_time_expressions populated. Lasting facts and preferences get status="current" and raw_time_expressions including any duration/recency phrases or the conversation date. Past events get status="completed" and the resolved date(s).
 
 Conversation:
 {conversation}
 
 Respond with a JSON array only. No markdown, no preamble.
-Example: [{{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact", "valid_time": {{"status": "current"}}}}, {{"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference", "valid_time": {{"status": "current"}}}}, {{"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "event_time": {{"start": "2024-03-15T00:00:00", "raw_expression": "March 15, 2024", "granularity": "day", "confidence": 0.9}}, "valid_until": "2024-03-15T23:59:59", "status": "planned", "event_frame": {{"event_type": "plan", "subjects": ["Alex"], "action": "attend", "objects": ["dentist appointment"]}}}}, {{"content": "Alex is currently feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state", "valid_time": {{"status": "current"}}}}, {{"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact", "event_time": {{"start": "2024-03-03T00:00:00", "raw_expression": "the weekend before March 10, 2024", "granularity": "week", "confidence": 0.7}}, "status": "completed"}}]"""
+Example (every memory has valid_time.status AND raw_time_expressions): [{{"content": "Alex is a 32-year-old software engineer", "category": "core", "importance": 0.9, "memory_type": "fact", "valid_time": {{"status": "current"}}, "raw_time_expressions": ["currently"]}}, {{"content": "Alex prefers window seats on flights", "category": "semantic", "importance": 0.5, "memory_type": "preference", "valid_time": {{"status": "current"}}, "raw_time_expressions": ["currently"]}}, {{"content": "Alex has a dentist appointment on March 15, 2024", "category": "episodic", "importance": 0.6, "memory_type": "plan", "event_time": {{"start": "2024-03-15T00:00:00", "raw_expression": "March 15, 2024", "granularity": "day", "confidence": 0.9}}, "valid_until": "2024-03-15T23:59:59", "valid_time": {{"status": "planned"}}, "raw_time_expressions": ["March 15, 2024"], "event_frame": {{"event_type": "plan", "subjects": ["Alex"], "action": "attend", "objects": ["dentist appointment"]}}}}, {{"content": "Alex is feeling stressed about the deadline", "category": "episodic", "importance": 0.4, "memory_type": "transient_state", "valid_time": {{"status": "in_progress"}}, "raw_time_expressions": ["currently"]}}, {{"content": "Sam ran a 5K for charity the weekend before March 10, 2024", "category": "episodic", "importance": 0.5, "memory_type": "fact", "event_time": {{"start": "2024-03-03T00:00:00", "raw_expression": "the weekend before March 10, 2024", "granularity": "week", "confidence": 0.7}}, "valid_time": {{"status": "completed"}}, "raw_time_expressions": ["the weekend before March 10, 2024", "March 3, 2024"]}}]"""
 
 
 CONFLICT_PROMPT = """Does the new memory contradict or update an existing memory?
