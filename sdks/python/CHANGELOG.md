@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.0](https://github.com/planetaryescape/cognitive-memory/compare/cognitive-memory-python-v0.4.0...cognitive-memory-python-v0.5.0) (2026-05-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** Phase 6 — tune defaults from cognitive-memory-benchmarks
+
+### Features
+
+* **adapters:** RemoteAdapter for daemon-backed deployment ([e0bba5c](https://github.com/planetaryescape/cognitive-memory/commit/e0bba5c2fb8e06aa0b505ac33496a8bea94ad519))
+* **config:** Phase 0a-sdk — base_decay_rates as a CognitiveMemoryConfig field ([abb32d4](https://github.com/planetaryescape/cognitive-memory/commit/abb32d40becfeb3f6f4c3c892c7ee4caaaad022b))
+* **config:** Phase 6 — tune defaults from cognitive-memory-benchmarks ([707758d](https://github.com/planetaryescape/cognitive-memory/commit/707758dc55a02394c31cb273dd8f562c75276be1))
+* **config:** v0.5.1 — decay_floors as a config field for the Phase 8 ablation ([7da1467](https://github.com/planetaryescape/cognitive-memory/commit/7da14676268ec98f522eabc82da3831d18f676b3))
+* **core:** bring CognitiveMemory class to CLI parity ([8774e71](https://github.com/planetaryescape/cognitive-memory/commit/8774e71891c258c6d39f8bd50ccaed6861e415a0))
+* **python:** temporal reconstruction behind default-off flags ([2322833](https://github.com/planetaryescape/cognitive-memory/commit/23228338dbb1d3d7a5b2d1b941d3480b70556173))
+* **sdk:** v0.4.0 SDK behavioural parity ([91d4c7b](https://github.com/planetaryescape/cognitive-memory/commit/91d4c7becef109d08294d544daccdcd916437fbd))
+* **ts:** align hot/cold/stub filtering and add rerankFactor knob ([7f85372](https://github.com/planetaryescape/cognitive-memory/commit/7f8537233ac94df7da11b2465195ae663c1d8bdf))
+
+
+### Bug Fixes
+
+* **extraction:** require valid_time.status and raw_time_expressions in extraction prompt ([ecfcd2e](https://github.com/planetaryescape/cognitive-memory/commit/ecfcd2e0061c78497f011a4de35c36c12b665bb3))
+* **temporal:** tighten _is_temporal_query precision ([ee3015a](https://github.com/planetaryescape/cognitive-memory/commit/ee3015ad2ed9ff74be5cc9d3f0712c92c997d948))
+
+
+### Documentation
+
+* align spec to shipped code; add v0.4.0 migration guides ([449d127](https://github.com/planetaryescape/cognitive-memory/commit/449d127ed1e6040033305ebc5f328e3dd20e1e2d))
+* **changelog:** v0.5.0 entry — empirical default tuning campaign ([bb7fcc5](https://github.com/planetaryescape/cognitive-memory/commit/bb7fcc55681bfcc581d9f51a09a38155e3914adf))
+* README refresh — daemon mode, related repos, v0.4.0 highlights ([2b0bc7a](https://github.com/planetaryescape/cognitive-memory/commit/2b0bc7aa03b17b235919e1b93967bce6bf87590d))
+* refresh benchmark numbers and docs URL in READMEs ([27c831c](https://github.com/planetaryescape/cognitive-memory/commit/27c831c6742b6293ab202c859ee1570d19db6f10))
+* refresh public README and Astro site with v6 benchmark numbers ([1ecdf05](https://github.com/planetaryescape/cognitive-memory/commit/1ecdf0582cc9b9978a8a90aa6c728187f41ce8b1))
+
 ## [0.5.1](https://github.com/planetaryescape/cognitive-memory/compare/cognitive-memory-python-v0.5.0...cognitive-memory-python-v0.5.1) (2026-05-11)
 
 ### Features
